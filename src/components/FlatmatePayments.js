@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { format, isWithinInterval, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
-const FlatmatePayments = ({ flatmates, monthlyContributions, expenses, onDebtUpdate }) => {
+const FlatmatePayments = ({ flatmates, monthlyContributions, expenses }) => {
   const [paymentMatrix, setPaymentMatrix] = useState({});
   const [debtData, setDebtData] = useState({});
   const [requiredAmount, setRequiredAmount] = useState(10);
@@ -103,13 +103,6 @@ const FlatmatePayments = ({ flatmates, monthlyContributions, expenses, onDebtUpd
   useEffect(() => {
     calculatePaymentMatrix();
   }, [calculatePaymentMatrix]);
-
-  // Update parent component with debt data changes
-  useEffect(() => {
-    if (onDebtUpdate) {
-      onDebtUpdate(debtData);
-    }
-  }, [debtData, onDebtUpdate]);
 
   // Handle cell hover for tooltips
   const handleCellHover = (flatmate, month, event) => {

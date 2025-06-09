@@ -163,6 +163,34 @@ function MainApp() {
     });
   }
 
+  // Toggle consumption payment status (for individual consumption debts)
+  async function toggleConsumptionPayment(paymentId, flatmateName, settlementId, amount) {
+    if (!hasPermission(PERMISSIONS.EDIT_EXPENSE)) {
+      alert('You do not have permission to mark settlement payments');
+      return;
+    }
+
+    return handleAsync(async () => {
+      const paymentRef = doc(db, "settlementPayments", paymentId);
+      
+      const currentPayment = settlementPayments[paymentId];
+      const newStatus = !currentPayment?.paid;
+      
+      await setDoc(paymentRef, {
+        type: 'consumption',
+        flatmateName,
+        settlementId,
+        amount,
+        paid: newStatus,
+        lastUpdated: new Date(),
+        updatedBy: currentUser?.name || 'Unknown'
+      });
+
+      // Refresh settlement payments
+      await fetchSettlementPayments();
+    });
+  }
+
   // Add monthly contribution
   async function addMonthlyContribution(flatmateName, amount = 10) {
     return handleAsync(async () => {
@@ -871,20 +899,6 @@ function MainApp() {
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Split Evenly Between All Flatmates</label>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-sm text-blue-800">
-                          This expense will be automatically split evenly between all {flatmates.length} flatmates.
-                        </p>
-                        {newAmount && flatmates.length > 0 && (
-                          <p className="text-sm text-blue-700 mt-1 font-medium">
-                            Each person pays: €{(parseFloat(newAmount) / flatmates.length).toFixed(2)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
                     <button
                       onClick={addExpense}
                       disabled={!newExpense || !newAmount || flatmates.length === 0}
@@ -923,7 +937,6 @@ function MainApp() {
                             </div>
                             <div className="text-sm text-gray-600">
                               <p>Paid by: <span className="font-medium">{expense.paidBy}</span></p>
-                              <p>Split between: {expense.participants?.join(', ')}</p>
                             </div>
                           </div>
                         );
@@ -1075,10 +1088,6 @@ function MainApp() {
             flatmates={flatmates} 
             monthlyContributions={monthlyContributions} 
             expenses={expenses}
-            onDebtUpdate={(debts) => {
-              console.log('App.js: FlatmatePayments onDebtUpdate callback triggered with:', debts);
-              setMonthlyPaymentDebts(debts);
-            }}
           />
         )}
 
@@ -1088,6 +1097,7 @@ function MainApp() {
             consumptionSettlements={consumptionSettlements}
             settlementPayments={settlementPayments}
             toggleSettlementPayment={toggleSettlementPayment}
+            toggleConsumptionPayment={toggleConsumptionPayment}
             currentUser={currentUser}
             hasPermission={hasPermission}
             PERMISSIONS={PERMISSIONS}

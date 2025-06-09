@@ -22,7 +22,6 @@ const ExpenseCard = ({ expense, categories, onDelete }) => {
       
       <div className="text-sm text-gray-600">
         <p>Paid by: <span className="font-medium">{expense.paidBy}</span></p>
-        <p>Split evenly between all flatmates</p>
         <div className="flex justify-between items-center mt-2">
           {expense.timestamp && (
             <p className="text-xs text-gray-500">

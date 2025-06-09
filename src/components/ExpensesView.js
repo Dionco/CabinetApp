@@ -247,14 +247,9 @@ const ExpensesView = ({
                           <p className="text-xl font-bold text-gray-800">€{expense.amount?.toFixed(2)}</p>
                           <p className="text-sm text-gray-600">€{expense.splitAmount?.toFixed(2)} each</p>
                         </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                      </div>                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
                         <div>
                           <span className="font-medium">Paid by:</span> {expense.paidBy}
-                        </div>
-                        <div>
-                          <span className="font-medium">Split:</span> Evenly between all flatmates
                         </div>
                         <div className="flex justify-between items-center">
                           <span>

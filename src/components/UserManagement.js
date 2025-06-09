@@ -8,6 +8,7 @@ const UserManagement = () => {
     updateUserRole, 
     grantPermission, 
     revokePermission, 
+    deleteUser,
     hasPermission, 
     ROLES, 
     PERMISSIONS, 
@@ -21,6 +22,7 @@ const UserManagement = () => {
 
   // Check if current user can manage roles
   const canManageRoles = hasPermission(PERMISSIONS.MANAGE_ROLES);
+  const canDeleteUsers = hasPermission(PERMISSIONS.DELETE_USER);
 
   const handleRoleChange = async (userId, newRole) => {
     if (!canManageRoles) return;
@@ -32,6 +34,27 @@ const UserManagement = () => {
       setSelectedUser(null);
     } catch (error) {
       alert('Error updating role: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId, userName) => {
+    if (!canDeleteUsers) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to delete user "${userName}"?\n\n` +
+      `This action cannot be undone and will permanently remove all user data.`
+    );
+    
+    if (!confirmed) return;
+    
+    setLoading(true);
+    try {
+      await deleteUser(userId);
+      alert(`User "${userName}" has been deleted successfully.`);
+    } catch (error) {
+      alert('Error deleting user: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -169,6 +192,15 @@ const UserManagement = () => {
                     >
                       Permissions
                     </button>
+                    {canDeleteUsers && (
+                      <button
+                        onClick={() => handleDeleteUser(user.id, user.name)}
+                        disabled={loading}
+                        className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

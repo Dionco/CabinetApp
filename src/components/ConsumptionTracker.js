@@ -30,6 +30,7 @@ const ConsumptionTracker = ({
   consumptionSettlements: consumptionSettlementsFromProps, 
   settlementPayments, 
   toggleSettlementPayment, 
+  toggleConsumptionPayment,
   currentUser, 
   hasPermission, 
   PERMISSIONS 
@@ -497,7 +498,7 @@ const ConsumptionTracker = ({
                                   .filter(([name, count]) => {
                                     if (count === 0) return true; // Consider zero consumption as "paid" (no debt)
                                     const paymentId = `consumption_${settlement.id}_${name}`;
-                                    return settlementPayments[paymentId];
+                                    return settlementPayments[paymentId]?.paid;
                                   }).length;
                                 const totalCount = Object.keys(settlement.consumptionData || {}).length;
                                 return `${paidCount}/${totalCount} Paid`;
@@ -511,7 +512,7 @@ const ConsumptionTracker = ({
                         {Object.entries(settlement.consumptionData).map(([name, count]) => {
                           const individualCost = count * settlement.costPerUnit;
                           const paymentId = `consumption_${settlement.id}_${name}`;
-                          const isPaid = settlementPayments?.[paymentId] || count === 0;
+                          const isPaid = settlementPayments?.[paymentId]?.paid || count === 0;
                           
                           return (
                             <div key={name} className={`flex items-center justify-between p-2 rounded ${count > 0 ? 'bg-white border' : 'bg-gray-50'}`}>
@@ -532,7 +533,7 @@ const ConsumptionTracker = ({
                                   {/* Payment Toggle Button */}
                                   <PermissionWrapper permission={PERMISSIONS?.MARK_PAYMENTS_PAID}>
                                     <button
-                                      onClick={() => toggleSettlementPayment?.(paymentId)}
+                                      onClick={() => toggleConsumptionPayment?.(paymentId, name, settlement.id, individualCost)}
                                       className={`text-xs px-2 py-1 rounded transition-colors ${
                                         isPaid 
                                           ? 'bg-red-500 text-white hover:bg-red-600' 

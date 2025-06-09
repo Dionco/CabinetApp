@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 
 const UserContext = createContext();
 
@@ -47,6 +47,7 @@ export const UserProvider = ({ children }) => {
     // User management
     MANAGE_ROLES: 'manage_roles',
     VIEW_USER_LIST: 'view_user_list',
+    DELETE_USER: 'delete_user',
     
     // System administration
     RESET_BALANCES: 'reset_balances',
@@ -69,6 +70,7 @@ export const UserProvider = ({ children }) => {
       PERMISSIONS.EXPORT_DATA,
       PERMISSIONS.IMPORT_DATA,
       PERMISSIONS.VIEW_USER_LIST,
+      PERMISSIONS.DELETE_USER,
       PERMISSIONS.RESET_BALANCES,
       PERMISSIONS.BULK_OPERATIONS
     ],
@@ -141,6 +143,26 @@ export const UserProvider = ({ children }) => {
       
       if (userDoc.exists()) {
         const userData = { id: userName, ...userDoc.data() };
+        
+        // Always refresh permissions based on current role to ensure consistency
+        const expectedPermissions = ROLE_PERMISSIONS[userData.role] || [];
+        const needsPermissionUpdate = 
+          !userData.permissions || 
+          userData.permissions.length !== expectedPermissions.length ||
+          !expectedPermissions.every(perm => userData.permissions.includes(perm));
+        
+        if (needsPermissionUpdate) {
+          console.log(`Updating permissions for user ${userName} with role ${userData.role}`);
+          // Update user permissions in Firebase
+          await setDoc(userRef, {
+            permissions: expectedPermissions,
+            updatedAt: new Date()
+          }, { merge: true });
+          
+          // Update local user data
+          userData.permissions = expectedPermissions;
+        }
+        
         setCurrentUser(userData);
         return userData;
       } else {
@@ -244,6 +266,30 @@ export const UserProvider = ({ children }) => {
     }
   };
 
+  // Delete user (admin and treasurer only)
+  const deleteUser = async (userId) => {
+    try {
+      if (!hasPermission(PERMISSIONS.DELETE_USER)) {
+        throw new Error('You do not have permission to delete users');
+      }
+
+      // Prevent deletion of current user
+      if (currentUser && currentUser.id === userId) {
+        throw new Error('You cannot delete your own account');
+      }
+
+      // Delete user document from Firebase
+      const userRef = doc(db, "users", userId);
+      await deleteDoc(userRef);
+      
+      // Refresh users list
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      throw error;
+    }
+  };
+
   // Check if current user has specific permission
   const hasPermission = (permission) => {
     if (!currentUser) return false;
@@ -308,6 +354,7 @@ export const UserProvider = ({ children }) => {
     updateUserRole,
     grantPermission,
     revokePermission,
+    deleteUser,
     hasPermission,
     hasRole,
     isAdminOrTreasurer,
