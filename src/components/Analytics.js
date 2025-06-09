@@ -591,15 +591,52 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="total" fill="#F59E0B" />
+                    <Tooltip 
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                              <p className="font-medium">{label}</p>
+                              {payload.map((entry, index) => (
+                                <p key={index} style={{ color: entry.color }}>
+                                  {entry.dataKey === 'coffee' ? '☕ Coffee' : 
+                                   entry.dataKey === 'beer' ? '🍺 Beer' : 
+                                   entry.dataKey === 'seltzer' ? '🥤 Seltzer' : entry.dataKey}: €{entry.value.toFixed(2)}
+                                </p>
+                              ))}
+                              <p className="font-semibold border-t pt-1 mt-1">
+                                Total: €{payload.reduce((sum, entry) => sum + entry.value, 0).toFixed(2)}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="coffee" stackId="consumption" fill="#F59E0B" name="☕ Coffee" />
+                    <Bar dataKey="beer" stackId="consumption" fill="#EAB308" name="🍺 Beer" />
+                    <Bar dataKey="seltzer" stackId="consumption" fill="#14B8A6" name="🥤 Seltzer" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-4 text-center">
-                <p className="text-sm text-gray-600">
-                  Total individual consumption costs across all settlements
+              <div className="mt-4">
+                <p className="text-sm text-gray-600 text-center mb-3">
+                  Individual consumption costs by type across all settlements
                 </p>
+                <div className="flex justify-center space-x-6">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 rounded-full bg-amber-500 mr-2"></div>
+                    <span className="text-sm text-gray-600">☕ Coffee</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2"></div>
+                    <span className="text-sm text-gray-600">🍺 Beer</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 rounded-full bg-teal-500 mr-2"></div>
+                    <span className="text-sm text-gray-600">🥤 Seltzer</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
