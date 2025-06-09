@@ -36,13 +36,27 @@ const BankImport = ({ flatmates, onImportComplete }) => {
       // Skip empty transactions
       if (!transaction.Datum && !transaction.date) continue;
       
-      // Handle different ING CSV formats
+      // Handle different ING CSV formats (including new format with multiple description fields)
       const parsedTransaction = {
         date: transaction.Datum || transaction.date || transaction.Date,
         amount: Math.abs(parseFloat((transaction.Bedrag || transaction.amount || transaction.Amount || '0').replace(',', '.'))),
-        description: transaction['Naam / Omschrijving'] || transaction.Omschrijving || transaction.Description || transaction.description || '',
-        counterparty: transaction.Tegenrekening || transaction.counterparty || transaction.Counterparty || '',
-        type: transaction['Af Bij'] || transaction.type || transaction.Type || '',
+        description: transaction['Naam / Omschrijving'] || 
+                    transaction.Omschrijving || 
+                    transaction.Description || 
+                    transaction.description || 
+                    // Handle multiple description fields (Omschrijving-1, Omschrijving-2, Omschrijving-3)
+                    [transaction['Omschrijving-1'], transaction['Omschrijving-2'], transaction['Omschrijving-3']]
+                      .filter(Boolean).join(' ') ||
+                    // Also try counterparty name as description
+                    transaction['Naam tegenpartij'] || '',
+        counterparty: transaction.Tegenrekening || 
+                     transaction['Tegenrekening IBAN/BBAN'] || 
+                     transaction.counterparty || 
+                     transaction.Counterparty || 
+                     transaction['Naam tegenpartij'] || '',
+        type: transaction['Af Bij'] || transaction.type || transaction.Type || 
+              // Determine type from amount sign if not specified
+              (parseFloat((transaction.Bedrag || '0').replace(',', '.')) < 0 ? 'Af' : 'Bij'),
         rawData: transaction
       };
       
@@ -56,7 +70,7 @@ const BankImport = ({ flatmates, onImportComplete }) => {
     return transactions;
   };
 
-  // Categorize transactions automatically (enhanced)
+  // Categorize transactions automatically (enhanced for new CSV format)
   const categorizeTransaction = (description, amount, counterparty) => {
     const desc = description.toLowerCase();
     const party = (counterparty || '').toLowerCase();
@@ -69,16 +83,18 @@ const BankImport = ({ flatmates, onImportComplete }) => {
       desc.includes('contribution') ||
       desc.includes('maandelijkse') ||
       desc.includes('monthly') ||
+      desc.includes('bijdrage') ||
       party.includes('huishoud')
     )) {
       return { type: 'contribution', category: null };
     }
     
-    // Expense categories based on description and amount
+    // Expense categories based on description and counterparty
     if (desc.includes('albert heijn') || desc.includes('ah ') || desc.includes('jumbo') || 
         desc.includes('supermarkt') || desc.includes('lidl') || desc.includes('plus') ||
         desc.includes('aldi') || desc.includes('groceries') || desc.includes('boodschappen') ||
-        party.includes('albert heijn') || party.includes('jumbo')) {
+        party.includes('albert heijn') || party.includes('jumbo') || party.includes('lidl') ||
+        party.includes('plus') || party.includes('aldi')) {
       return { type: 'expense', category: 'food' };
     }
     
@@ -90,7 +106,7 @@ const BankImport = ({ flatmates, onImportComplete }) => {
     
     if (desc.includes('action') || desc.includes('cleaning') || desc.includes('schoonmaak') ||
         desc.includes('blokker') || desc.includes('hema') || desc.includes('schoonmaakmiddel') ||
-        party.includes('action') || party.includes('blokker')) {
+        party.includes('action') || party.includes('blokker') || party.includes('hema')) {
       return { type: 'expense', category: 'cleaning' };
     }
     
@@ -256,19 +272,24 @@ const BankImport = ({ flatmates, onImportComplete }) => {
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
-      <h3 className="text-2xl font-semibold mb-4 text-gray-700">🏦 Bank Import (ING CSV)</h3>
+      <h3 className="text-2xl font-semibold mb-4 text-gray-700">🏦 Bank Import (ING/Rabobank CSV)</h3>
       
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-medium text-blue-800 mb-2">How to export from ING:</h4>
+          <h4 className="font-medium text-blue-800 mb-2">How to export from your bank:</h4>
           <ol className="text-sm text-blue-700 space-y-1">
-            <li>1. Log into ING Internet Banking</li>
+            <li>1. Log into your bank's internet banking</li>
             <li>2. Go to your shared house account</li>
             <li>3. Click "Download transactions" or "Transacties downloaden"</li>
             <li>4. Select CSV format</li>
             <li>5. Choose date range (last month recommended)</li>
             <li>6. Upload the downloaded file below</li>
           </ol>
+          <div className="mt-2 text-xs text-blue-600">
+            ✅ Supports ING and Rabobank CSV formats<br/>
+            ✅ Handles multiple description fields (Omschrijving-1, -2, -3)<br/>
+            ✅ Auto-detects separator (comma or semicolon)
+          </div>
         </div>
 
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
