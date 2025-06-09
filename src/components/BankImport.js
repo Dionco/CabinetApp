@@ -193,7 +193,7 @@ const BankImport = ({ flatmates, onImportComplete }) => {
           if (textToCheck.includes(firstName) || 
               (lastName && textToCheck.includes(lastName)) ||
               textToCheck.includes(fullName)) {
-            assignedFlatmate = flatmate.fullName || flatmate.name;
+            assignedFlatmate = flatmate.name; // Use primary name for consistency
             break;
           }
         }

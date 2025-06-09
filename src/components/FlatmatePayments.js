@@ -54,7 +54,8 @@ const FlatmatePayments = ({ flatmates, monthlyContributions, expenses }) => {
           
           // Match by name or month field for CSV imports
           const nameMatch = contribution.flatmate === flatmate.name || 
-                           contribution.description?.toLowerCase().includes(flatmate.name.toLowerCase());
+                           contribution.description?.toLowerCase().includes(flatmate.name.toLowerCase()) ||
+                           (flatmate.lastname && contribution.description?.toLowerCase().includes(flatmate.lastname.toLowerCase()));
           
           const dateMatch = isWithinInterval(contributionDate, { start: monthStart, end: monthEnd }) ||
                            contribution.month === month.key;

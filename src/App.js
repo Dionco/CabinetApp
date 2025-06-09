@@ -42,6 +42,11 @@ function MainApp() {
   const [editCategory, setEditCategory] = useState("food");
   const [editPaidBy, setEditPaidBy] = useState("");
 
+  // Edit flatmate states
+  const [editingFlatmate, setEditingFlatmate] = useState(null);
+  const [editFlatmateName, setEditFlatmateName] = useState("");
+  const [editFlatmateLastname, setEditFlatmateLastname] = useState("");
+
   // Categories for expenses
   const categories = [
     { value: "food", label: "🍕 Food & Cooking", color: "bg-green-100 text-green-800" },
@@ -83,15 +88,17 @@ function MainApp() {
       // For backward compatibility with old data
       return flatmate;
     }
-    return flatmate.fullName || flatmate.name || 'Unknown';
+    // Always show just the first name for clean, simple display
+    return flatmate.name || 'Unknown';
   };
 
   // Helper function to get flatmate search key (for balance lookups)
+  // This should always use the primary 'name' field to maintain consistency
   const getFlatmateKey = (flatmate) => {
     if (typeof flatmate === 'string') {
       return flatmate;
     }
-    return flatmate.fullName || flatmate.name;
+    return flatmate.name; // Always use the primary name field as identifier
   };
 
   // Fetch flatmates
@@ -361,21 +368,62 @@ function MainApp() {
       const flatmateData = {
         name: newFlatmateName.trim(),
         lastname: newFlatmateLastname.trim() || "",
-        fullName: `${newFlatmateName.trim()} ${newFlatmateLastname.trim()}`.trim(),
+        fullName: newFlatmateLastname.trim() 
+          ? `${newFlatmateName.trim()} ${newFlatmateLastname.trim()}` 
+          : newFlatmateName.trim(),
         joinedAt: new Date()
       };
       
       await addDoc(collection(db, "flatmates"), flatmateData);
       
-      // Initialize balance for new flatmate (using full name for backward compatibility)
-      const balanceKey = flatmateData.fullName || flatmateData.name;
-      await setDoc(doc(db, "balances", balanceKey), {
+      // Initialize balance for new flatmate (using primary name as key)
+      await setDoc(doc(db, "balances", flatmateData.name), {
         balance: 0
       });
       
       setNewFlatmateName("");
       setNewFlatmateLastname("");
       setShowAddFlatmate(false);
+      await Promise.all([fetchFlatmates(), fetchBalances()]);
+    });
+  }
+
+  // Edit flatmate (with permission check)
+  async function editFlatmate(flatmateId, updatedFlatmateData) {
+    if (!hasPermission(PERMISSIONS.MANAGE_ROLES)) {
+      setError("You don't have permission to edit flatmates");
+      return;
+    }
+    
+    return handleAsync(async () => {
+      const oldFlatmate = flatmates.find(f => f.id === flatmateId);
+      if (!oldFlatmate) {
+        setError("Flatmate not found");
+        return;
+      }
+
+      // Create updated flatmate data - keep the original name as primary identifier
+      const updatedData = {
+        name: updatedFlatmateData.name.trim(), // Primary identifier (used for balances)
+        lastname: updatedFlatmateData.lastname.trim() || "", // Supplementary info only
+        fullName: updatedFlatmateData.lastname.trim() 
+          ? `${updatedFlatmateData.name.trim()} ${updatedFlatmateData.lastname.trim()}` 
+          : updatedFlatmateData.name.trim(), // For display purposes
+        joinedAt: oldFlatmate.joinedAt // Keep original join date
+      };
+      
+      // Update flatmate document
+      await setDoc(doc(db, "flatmates", flatmateId), updatedData);
+      
+      // Note: We don't need to migrate balance data anymore since we always use 'name' as the key
+      // The balance will remain consistent with the primary 'name' field
+      
+      // Reset edit state
+      setEditingFlatmate(null);
+      setEditFlatmateName("");
+      setEditFlatmateLastname("");
+      
+      // Refresh data
       await Promise.all([fetchFlatmates(), fetchBalances()]);
     });
   }
@@ -517,6 +565,33 @@ function MainApp() {
 
     await editExpense(editingExpense.id, updatedData);
     cancelEditing();
+  }
+
+  // Start editing a flatmate
+  function startEditingFlatmate(flatmate) {
+    setEditingFlatmate(flatmate.id);
+    setEditFlatmateName(flatmate.name || "");
+    setEditFlatmateLastname(flatmate.lastname || "");
+  }
+
+  // Cancel editing flatmate
+  function cancelEditingFlatmate() {
+    setEditingFlatmate(null);
+    setEditFlatmateName("");
+    setEditFlatmateLastname("");
+  }
+
+  // Submit flatmate edit
+  async function submitFlatmateEdit() {
+    if (!editFlatmateName.trim()) {
+      setError("First name is required");
+      return;
+    }
+
+    await editFlatmate(editingFlatmate, {
+      name: editFlatmateName,
+      lastname: editFlatmateLastname
+    });
   }
 
   // Calculate comprehensive balances including monthly payments and consumption settlements
@@ -826,77 +901,124 @@ function MainApp() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {flatmates.map((flatmate) => (
                     <div key={flatmate.id} className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 relative">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-semibold text-lg text-gray-800">{getFlatmateDisplayName(flatmate)}</h3>
-                          {flatmate.lastname && (
-                            <p className="text-xs text-gray-500">
-                              First: {flatmate.name} | Last: {flatmate.lastname}
-                            </p>
-                          )}
+                      {editingFlatmate === flatmate.id ? (
+                        // Edit mode
+                        <div className="space-y-3">
+                          <h4 className="font-medium text-gray-800">Edit Flatmate</h4>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="First name"
+                              value={editFlatmateName}
+                              onChange={(e) => setEditFlatmateName(e.target.value)}
+                              className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Last name (optional)"
+                              value={editFlatmateLastname}
+                              onChange={(e) => setEditFlatmateLastname(e.target.value)}
+                              className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={submitFlatmateEdit}
+                              disabled={!editFlatmateName.trim()}
+                              className="flex-1 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:bg-gray-400"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEditingFlatmate}
+                              className="flex-1 bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                        <PermissionWrapper permission={PERMISSIONS.REMOVE_FLATMATE}>
-                          <button
-                            onClick={() => removeFlatmate(flatmate.id, getFlatmateKey(flatmate))}
-                            className="text-red-500 hover:text-red-700 text-sm p-1 rounded hover:bg-red-50 transition-colors"
-                            title="Remove flatmate"
-                          >
-                            ✕
-                          </button>
-                        </PermissionWrapper>
-                      </div>
-                      <p className={`text-xl font-bold ${
-                        (() => {
-                          const comprehensiveBalances = calculateComprehensiveBalances();
-                          const flatmateKey = getFlatmateKey(flatmate);
-                          return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'text-green-600' : 'text-red-600';
-                        })()
-                      }`}>
-                        €{(() => {
-                          const comprehensiveBalances = calculateComprehensiveBalances();
-                          const flatmateKey = getFlatmateKey(flatmate);
-                          return (comprehensiveBalances[flatmateKey] || 0).toFixed(2);
-                        })()}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {(() => {
-                          const comprehensiveBalances = calculateComprehensiveBalances();
-                          const flatmateKey = getFlatmateKey(flatmate);
-                          return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'Is owed' : 'Owes';
-                        })()}
-                      </p>
-                      
-                      {/* Balance breakdown tooltip */}
-                      <div className="text-xs text-gray-500 mt-1 space-y-1">
-                        {(() => {
-                          const currentMonthlyDebts = calculateMonthlyPaymentDebts();
-                          const flatmateKey = getFlatmateKey(flatmate);
-                          return currentMonthlyDebts[flatmateKey] > 0 && (
-                            <div>Monthly debts: -€{(currentMonthlyDebts[flatmateKey] || 0).toFixed(2)}</div>
-                          );
-                        })()}
-                        {(() => {
-                          let consumptionDebt = 0;
-                          const flatmateKey = getFlatmateKey(flatmate);
-                          if (consumptionSettlements) {
-                            consumptionSettlements.forEach(settlement => {
-                              if (settlement.consumptionData && settlement.consumptionData[flatmateKey]) {
-                                const count = settlement.consumptionData[flatmateKey];
-                                if (count > 0) {
-                                  const paymentId = `consumption_${settlement.id}_${flatmateKey}`;
-                                  const isPaid = settlementPayments?.[paymentId]?.paid || false;
-                                  if (!isPaid) {
-                                    consumptionDebt += count * settlement.costPerUnit;
+                      ) : (
+                        // View mode
+                        <>
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg text-gray-800">{getFlatmateDisplayName(flatmate)}</h3>
+                            </div>
+                            <div className="flex gap-1">
+                              <PermissionWrapper permission={PERMISSIONS.MANAGE_ROLES}>
+                                <button
+                                  onClick={() => startEditingFlatmate(flatmate)}
+                                  className="text-blue-500 hover:text-blue-700 text-sm p-1 rounded hover:bg-blue-50 transition-colors"
+                                  title="Edit flatmate"
+                                >
+                                  ✏️
+                                </button>
+                              </PermissionWrapper>
+                              <PermissionWrapper permission={PERMISSIONS.REMOVE_FLATMATE}>
+                                <button
+                                  onClick={() => removeFlatmate(flatmate.id, getFlatmateKey(flatmate))}
+                                  className="text-red-500 hover:text-red-700 text-sm p-1 rounded hover:bg-red-50 transition-colors"
+                                  title="Remove flatmate"
+                                >
+                                  ✕
+                                </button>
+                              </PermissionWrapper>
+                            </div>
+                          </div>
+                          <p className={`text-xl font-bold ${
+                            (() => {
+                              const comprehensiveBalances = calculateComprehensiveBalances();
+                              const flatmateKey = getFlatmateKey(flatmate);
+                              return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'text-green-600' : 'text-red-600';
+                            })()
+                          }`}>
+                            €{(() => {
+                              const comprehensiveBalances = calculateComprehensiveBalances();
+                              const flatmateKey = getFlatmateKey(flatmate);
+                              return (comprehensiveBalances[flatmateKey] || 0).toFixed(2);
+                            })()}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {(() => {
+                              const comprehensiveBalances = calculateComprehensiveBalances();
+                              const flatmateKey = getFlatmateKey(flatmate);
+                              return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'Is owed' : 'Owes';
+                            })()}
+                          </p>
+                          
+                          {/* Balance breakdown tooltip */}
+                          <div className="text-xs text-gray-500 mt-1 space-y-1">
+                            {(() => {
+                              const currentMonthlyDebts = calculateMonthlyPaymentDebts();
+                              const flatmateKey = getFlatmateKey(flatmate);
+                              return currentMonthlyDebts[flatmateKey] > 0 && (
+                                <div>Monthly debts: -€{(currentMonthlyDebts[flatmateKey] || 0).toFixed(2)}</div>
+                              );
+                            })()}
+                            {(() => {
+                              let consumptionDebt = 0;
+                              const flatmateKey = getFlatmateKey(flatmate);
+                              if (consumptionSettlements) {
+                                consumptionSettlements.forEach(settlement => {
+                                  if (settlement.consumptionData && settlement.consumptionData[flatmateKey]) {
+                                    const count = settlement.consumptionData[flatmateKey];
+                                    if (count > 0) {
+                                      const paymentId = `consumption_${settlement.id}_${flatmateKey}`;
+                                      const isPaid = settlementPayments?.[paymentId]?.paid || false;
+                                      if (!isPaid) {
+                                        consumptionDebt += count * settlement.costPerUnit;
+                                      }
+                                    }
                                   }
-                                }
+                                });
                               }
-                            });
-                          }
-                          return consumptionDebt > 0 ? (
-                            <div>Consumption debts: -€{consumptionDebt.toFixed(2)}</div>
-                          ) : null;
-                        })()}
-                      </div>
+                              return consumptionDebt > 0 ? (
+                                <div>Consumption debts: -€{consumptionDebt.toFixed(2)}</div>
+                              ) : null;
+                            })()}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

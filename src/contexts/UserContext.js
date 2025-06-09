@@ -48,6 +48,7 @@ export const UserProvider = ({ children }) => {
     MANAGE_ROLES: 'manage_roles',
     VIEW_USER_LIST: 'view_user_list',
     DELETE_USER: 'delete_user',
+    DEPRECATE_USER: 'deprecate_user',
     
     // System administration
     RESET_BALANCES: 'reset_balances',
@@ -71,6 +72,7 @@ export const UserProvider = ({ children }) => {
       PERMISSIONS.IMPORT_DATA,
       PERMISSIONS.VIEW_USER_LIST,
       PERMISSIONS.DELETE_USER,
+      PERMISSIONS.DEPRECATE_USER,
       PERMISSIONS.RESET_BALANCES,
       PERMISSIONS.BULK_OPERATIONS
     ],
@@ -81,7 +83,8 @@ export const UserProvider = ({ children }) => {
       PERMISSIONS.ADD_FLATMATE,
       PERMISSIONS.EDIT_FLATMATE,
       PERMISSIONS.VIEW_ANALYTICS,
-      PERMISSIONS.VIEW_USER_LIST
+      PERMISSIONS.VIEW_USER_LIST,
+      PERMISSIONS.DEPRECATE_USER
     ],
     [ROLES.MEMBER]: [
       PERMISSIONS.ADD_EXPENSE,
@@ -290,6 +293,60 @@ export const UserProvider = ({ children }) => {
     }
   };
 
+  // Deprecate user (keeps data but marks as inactive)
+  const deprecateUser = async (userId, reason = '') => {
+    try {
+      if (!hasPermission(PERMISSIONS.DEPRECATE_USER)) {
+        throw new Error('You do not have permission to deprecate users');
+      }
+
+      // Prevent deprecation of current user
+      if (currentUser && currentUser.id === userId) {
+        throw new Error('You cannot deprecate your own account');
+      }
+
+      const userRef = doc(db, "users", userId);
+      await setDoc(userRef, {
+        isActive: false,
+        isDeprecated: true,
+        deprecatedAt: new Date(),
+        deprecatedBy: currentUser?.id || 'Unknown',
+        deprecationReason: reason,
+        updatedAt: new Date()
+      }, { merge: true });
+      
+      // Refresh users list
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error deprecating user:', error);
+      throw error;
+    }
+  };
+
+  // Reactivate deprecated user
+  const reactivateUser = async (userId) => {
+    try {
+      if (!hasPermission(PERMISSIONS.DEPRECATE_USER)) {
+        throw new Error('You do not have permission to reactivate users');
+      }
+
+      const userRef = doc(db, "users", userId);
+      await setDoc(userRef, {
+        isActive: true,
+        isDeprecated: false,
+        reactivatedAt: new Date(),
+        reactivatedBy: currentUser?.id || 'Unknown',
+        updatedAt: new Date()
+      }, { merge: true });
+      
+      // Refresh users list
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error reactivating user:', error);
+      throw error;
+    }
+  };
+
   // Check if current user has specific permission
   const hasPermission = (permission) => {
     if (!currentUser) return false;
@@ -355,6 +412,8 @@ export const UserProvider = ({ children }) => {
     grantPermission,
     revokePermission,
     deleteUser,
+    deprecateUser,
+    reactivateUser,
     hasPermission,
     hasRole,
     isAdminOrTreasurer,

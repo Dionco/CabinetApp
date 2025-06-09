@@ -9,6 +9,8 @@ const UserManagement = () => {
     grantPermission, 
     revokePermission, 
     deleteUser,
+    deprecateUser,
+    reactivateUser,
     hasPermission, 
     ROLES, 
     PERMISSIONS, 
@@ -18,11 +20,15 @@ const UserManagement = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [showDeprecateModal, setShowDeprecateModal] = useState(false);
+  const [deprecationReason, setDeprecationReason] = useState('');
+  const [showDeprecatedUsers, setShowDeprecatedUsers] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Check if current user can manage roles
   const canManageRoles = hasPermission(PERMISSIONS.MANAGE_ROLES);
   const canDeleteUsers = hasPermission(PERMISSIONS.DELETE_USER);
+  const canDeprecateUsers = hasPermission(PERMISSIONS.DEPRECATE_USER);
 
   const handleRoleChange = async (userId, newRole) => {
     if (!canManageRoles) return;
@@ -72,6 +78,51 @@ const UserManagement = () => {
       }
     } catch (error) {
       alert('Error updating permission: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeprecateUser = async (userId, userName) => {
+    if (!canDeprecateUsers) return;
+    
+    setSelectedUser({ id: userId, name: userName });
+    setShowDeprecateModal(true);
+  };
+
+  const confirmDeprecateUser = async () => {
+    if (!selectedUser) return;
+    
+    setLoading(true);
+    try {
+      await deprecateUser(selectedUser.id, deprecationReason);
+      alert(`User "${selectedUser.name}" has been deprecated successfully.`);
+      setShowDeprecateModal(false);
+      setSelectedUser(null);
+      setDeprecationReason('');
+    } catch (error) {
+      alert('Error deprecating user: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReactivateUser = async (userId, userName) => {
+    if (!canDeprecateUsers) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to reactivate user "${userName}"?\n\n` +
+      `This will restore their access to the system.`
+    );
+    
+    if (!confirmed) return;
+    
+    setLoading(true);
+    try {
+      await reactivateUser(userId);
+      alert(`User "${userName}" has been reactivated successfully.`);
+    } catch (error) {
+      alert('Error reactivating user: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -141,65 +192,141 @@ const UserManagement = () => {
       {/* Users List */}
       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">
-            All Users ({users.length})
-          </h3>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-800">
+              {showDeprecatedUsers ? 'Deprecated Users' : 'Active Users'} ({
+                showDeprecatedUsers 
+                  ? users.filter(u => u.isDeprecated).length
+                  : users.filter(u => !u.isDeprecated).length
+              })
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDeprecatedUsers(!showDeprecatedUsers)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                  showDeprecatedUsers
+                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                }`}
+              >
+                {showDeprecatedUsers ? '👥 Show Active' : '📦 Show Deprecated'}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="divide-y divide-gray-200">
-          {users.map((user) => (
-            <div key={user.id} className="p-6 hover:bg-gray-50 transition-colors">
+          {users
+            .filter(user => showDeprecatedUsers ? user.isDeprecated : !user.isDeprecated)
+            .map((user) => (
+            <div key={user.id} className={`p-6 transition-colors ${
+              user.isDeprecated 
+                ? 'bg-gray-100 hover:bg-gray-150 opacity-75' 
+                : 'hover:bg-gray-50'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="text-2xl">
-                    {getRoleIcon(user.role)}
+                    {user.isDeprecated ? '📦' : getRoleIcon(user.role)}
                   </div>
                   <div>
-                    <h4 className="text-lg font-medium text-gray-800">
+                    <h4 className={`text-lg font-medium ${
+                      user.isDeprecated ? 'text-gray-600' : 'text-gray-800'
+                    }`}>
                       {user.name}
                       {user.id === currentUser?.id && (
                         <span className="ml-2 text-sm text-indigo-600">(You)</span>
                       )}
+                      {user.isDeprecated && (
+                        <span className="ml-2 text-sm text-red-600 font-medium">(Deprecated)</span>
+                      )}
                     </h4>
                     <div className="flex items-center space-x-2 mt-1">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getRoleColor(user.role)}`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                        user.isDeprecated ? 'bg-gray-200 text-gray-600 border-gray-300' : getRoleColor(user.role)
+                      }`}>
                         {user.role?.charAt(0).toUpperCase() + user.role?.slice(1)}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className={`text-xs ${user.isDeprecated ? 'text-gray-500' : 'text-gray-500'}`}>
                         {user.permissions?.length || 0} permissions
                       </span>
+                      {user.isDeprecated && user.deprecatedAt && (
+                        <span className="text-xs text-red-500">
+                          Deprecated: {new Date(user.deprecatedAt.seconds * 1000).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
+                    {user.isDeprecated && user.deprecationReason && (
+                      <p className="text-xs text-gray-600 mt-1 italic">
+                        Reason: {user.deprecationReason}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {canManageRoles && user.id !== currentUser?.id && (
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => {
-                        setSelectedUser(user);
-                        setShowRoleModal(true);
-                      }}
-                      className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-medium"
-                    >
-                      Change Role
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedUser(user);
-                        setShowPermissionModal(true);
-                      }}
-                      className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
-                    >
-                      Permissions
-                    </button>
-                    {canDeleteUsers && (
-                      <button
-                        onClick={() => handleDeleteUser(user.id, user.name)}
-                        disabled={loading}
-                        className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Delete
-                      </button>
+                    {!user.isDeprecated ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowRoleModal(true);
+                          }}
+                          className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-medium"
+                        >
+                          Change Role
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowPermissionModal(true);
+                          }}
+                          className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
+                        >
+                          Permissions
+                        </button>
+                        {canDeprecateUsers && (
+                          <button
+                            onClick={() => handleDeprecateUser(user.id, user.name)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            📦 Deprecate
+                          </button>
+                        )}
+                        {canDeleteUsers && (
+                          <button
+                            onClick={() => handleDeleteUser(user.id, user.name)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      // Deprecated user actions
+                      <>
+                        {canDeprecateUsers && (
+                          <button
+                            onClick={() => handleReactivateUser(user.id, user.name)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            ↩️ Reactivate
+                          </button>
+                        )}
+                        {canDeleteUsers && (
+                          <button
+                            onClick={() => handleDeleteUser(user.id, user.name)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Permanently Delete
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -373,6 +500,62 @@ const UserManagement = () => {
           </div>
         </div>
       </div>
+
+      {/* Deprecate User Modal */}
+      {showDeprecateModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <span className="text-2xl mr-3">📦</span>
+                <h3 className="text-xl font-semibold text-gray-800">
+                  Deprecate User
+                </h3>
+              </div>
+              
+              <p className="text-gray-600 mb-4">
+                You are about to deprecate <strong>{selectedUser.name}</strong>. 
+                This will preserve all their data but mark them as inactive. 
+                They will no longer appear in active user lists or be able to access the system.
+              </p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for deprecation (optional)
+                </label>
+                <textarea
+                  value={deprecationReason}
+                  onChange={(e) => setDeprecationReason(e.target.value)}
+                  placeholder="e.g., Moved out, graduated, etc."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                  rows="3"
+                />
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setShowDeprecateModal(false);
+                    setSelectedUser(null);
+                    setDeprecationReason('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeprecateUser}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Deprecating...' : 'Deprecate User'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
