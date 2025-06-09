@@ -282,7 +282,7 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
     };
   };
 
-  // Calculate monthly profit trends
+  // Calculate monthly profit trends with cumulative total
   const getMonthlyProfitTrends = () => {
     const monthlyProfit = {};
     
@@ -298,7 +298,8 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
             actualCost: 0,
             revenue: 0,
             profit: 0,
-            margin: 0
+            margin: 0,
+            cumulativeProfit: 0
           };
         }
         
@@ -316,7 +317,8 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
           actualCost: 0,
           revenue: 0,
           profit: 0,
-          margin: 0
+          margin: 0,
+          cumulativeProfit: 0
         };
       }
       
@@ -332,7 +334,7 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
       monthData.margin = monthData.revenue > 0 ? (monthData.profit / monthData.revenue) * 100 : 0;
     });
 
-    // Get last 6 months
+    // Get last 6 months and sort chronologically
     const now = new Date();
     const sixMonthsAgo = subMonths(now, 5);
     const months = eachMonthOfInterval({
@@ -340,16 +342,40 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
       end: now
     });
 
-    return months.map(month => {
+    const monthlyData = months.map(month => {
       const monthKey = format(month, 'yyyy-MM');
       return monthlyProfit[monthKey] || {
         month: format(month, 'MMM yyyy'),
         actualCost: 0,
         revenue: 0,
         profit: 0,
-        margin: 0
+        margin: 0,
+        cumulativeProfit: 0
       };
     });
+
+    // Calculate cumulative profit
+    let runningTotal = 0;
+    monthlyData.forEach(monthData => {
+      runningTotal += monthData.profit;
+      monthData.cumulativeProfit = runningTotal;
+    });
+
+    return monthlyData;
+  };
+
+  // Calculate profit trend direction
+  const getProfitTrend = () => {
+    const trends = monthlyProfitTrends;
+    if (trends.length < 2) return { direction: 'neutral', change: 0 };
+    
+    const recent = trends[trends.length - 1];
+    const previous = trends[trends.length - 2];
+    
+    const change = recent.cumulativeProfit - previous.cumulativeProfit;
+    const direction = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
+    
+    return { direction, change: Math.abs(change) };
   };
 
   // Calculate profit by consumption type for pie chart
@@ -430,26 +456,6 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
     return Object.values(individualCosts);
   };
 
-  const categoryData = getCategoryData();
-  const spendingByPerson = getSpendingByPerson();
-  const monthlyTrends = getMonthlyTrends();
-  const weeklyTrends = getWeeklyTrends();
-  const stats = getSummaryStats();
-  const monthlyContributions = getMonthlyContributionData();
-  const bankStatus = getBankAccountStatus();
-  
-  // Consumption data
-  const consumptionAnalysis = getConsumptionAnalysis();
-  const consumptionByType = getConsumptionByType();
-  const consumptionSettlementsOverTime = getConsumptionSettlementsOverTime();
-  const individualConsumptionCosts = getIndividualConsumptionCosts();
-  
-  // Profit analysis data
-  const profitAnalysis = getProfitAnalysis();
-  const monthlyProfitTrends = getMonthlyProfitTrends();
-  // eslint-disable-next-line no-unused-vars
-  const profitByType = getProfitByType();
-
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
@@ -475,6 +481,27 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
       </div>
     );
   }
+
+  const categoryData = getCategoryData();
+  const spendingByPerson = getSpendingByPerson();
+  const monthlyTrends = getMonthlyTrends();
+  const weeklyTrends = getWeeklyTrends();
+  const stats = getSummaryStats();
+  const monthlyContributions = getMonthlyContributionData();
+  const bankStatus = getBankAccountStatus();
+  
+  // Consumption data
+  const consumptionAnalysis = getConsumptionAnalysis();
+  const consumptionByType = getConsumptionByType();
+  const consumptionSettlementsOverTime = getConsumptionSettlementsOverTime();
+  const individualConsumptionCosts = getIndividualConsumptionCosts();
+  
+  // Profit analysis data
+  const profitAnalysis = getProfitAnalysis();
+  const monthlyProfitTrends = getMonthlyProfitTrends();
+  const profitTrend = getProfitTrend();
+  // eslint-disable-next-line no-unused-vars
+  const profitByType = getProfitByType();
 
   return (
     <div className="space-y-8">
@@ -937,6 +964,12 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                      profitAnalysis.status === 'loss' ?
                       `You're losing €${Math.abs(profitAnalysis.totalProfit).toFixed(2)} on consumption sales. Consider adjusting your prices.` :
                       'Your consumption sales are breaking even. You\'re covering costs but not making profit.'}
+                    {monthlyProfitTrends.length >= 2 && (
+                      <span className="block mt-1">
+                        <strong>Trend:</strong> {profitTrend.direction === 'up' ? '📈 Growing' : profitTrend.direction === 'down' ? '📉 Declining' : '➡️ Stable'} 
+                        {profitTrend.change > 0 && ` (€${profitTrend.change.toFixed(2)} this month)`}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -946,13 +979,14 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Monthly Profit Trends */}
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-semibold mb-4 text-gray-700">Monthly Profit Trends</h3>
+              <h3 className="text-xl font-semibold mb-4 text-gray-700">Cumulative Profit Progress</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={monthlyProfitTrends}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
-                    <YAxis />
+                    <YAxis yAxisId="left" />
+                    <YAxis yAxisId="right" orientation="right" />
                     <Tooltip 
                       content={({ active, payload, label }) => {
                         if (active && payload && payload.length) {
@@ -960,10 +994,13 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                           return (
                             <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
                               <p className="font-medium">{label}</p>
-                              <p className="text-sm text-gray-600">Revenue: €{data.revenue.toFixed(2)}</p>
-                              <p className="text-sm text-gray-600">Costs: €{data.actualCost.toFixed(2)}</p>
+                              <p className="text-sm text-gray-600">Monthly Revenue: €{data.revenue.toFixed(2)}</p>
+                              <p className="text-sm text-gray-600">Monthly Costs: €{data.actualCost.toFixed(2)}</p>
                               <p className={`text-sm font-medium ${data.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                Profit: €{data.profit.toFixed(2)} ({data.margin.toFixed(1)}%)
+                                Monthly Profit: €{data.profit.toFixed(2)}
+                              </p>
+                              <p className={`text-sm font-bold border-t pt-1 mt-1 ${data.cumulativeProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Total Profit: €{data.cumulativeProfit.toFixed(2)}
                               </p>
                             </div>
                           );
@@ -972,15 +1009,38 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                       }}
                     />
                     <Line 
+                      yAxisId="left"
                       type="monotone" 
                       dataKey="profit" 
                       stroke="#10B981"
-                      strokeWidth={3}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Monthly Profit"
+                      strokeDasharray="5 5"
+                    />
+                    <Line 
+                      yAxisId="right"
+                      type="monotone" 
+                      dataKey="cumulativeProfit" 
+                      stroke="#3B82F6"
+                      strokeWidth={4}
                       dot={{ r: 4 }}
                       activeDot={{ r: 6 }}
+                      name="Cumulative Profit"
                     />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="mt-4 flex justify-center space-x-6">
+                <div className="flex items-center">
+                  <div className="w-4 h-0.5 bg-green-500 mr-2" style={{borderStyle: 'dashed', borderWidth: '0 0 2px 0'}}></div>
+                  <span className="text-sm text-gray-600">Monthly Profit</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-1 bg-blue-500 mr-2"></div>
+                  <span className="text-sm text-gray-600">Total Cumulative Profit</span>
+                </div>
               </div>
             </div>
 
