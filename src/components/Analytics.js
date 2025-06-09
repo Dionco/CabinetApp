@@ -447,6 +447,7 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
   // Profit analysis data
   const profitAnalysis = getProfitAnalysis();
   const monthlyProfitTrends = getMonthlyProfitTrends();
+  // eslint-disable-next-line no-unused-vars
   const profitByType = getProfitByType();
 
   const CustomTooltip = ({ active, payload, label }) => {
