@@ -20,6 +20,7 @@ NC='\033[0m' # No Color
 # Configuration
 DOMAIN="cabinetapp.vercel.app"
 BRANCH="main"
+DEBUG_MODE=false
 
 # Function to print colored output
 print_status() {
@@ -36,6 +37,12 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_debug() {
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        echo -e "${YELLOW}[DEBUG]${NC} $1"
+    fi
 }
 
 print_header() {
@@ -122,16 +129,45 @@ deploy_vercel() {
     if [[ $? -eq 0 ]]; then
         print_success "Successfully deployed to Vercel!"
         
-        # Extract the deployment URL from the output
-        DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -E "https://house-finance-tracker-[a-zA-Z0-9]+-dions-projects-[a-zA-Z0-9]+\.vercel\.app" | tail -1)
+        print_debug "Vercel output:"
+        print_debug "$DEPLOY_OUTPUT"
+        
+        # Extract the deployment URL from the output using multiple patterns
+        # Try to find the production URL line
+        DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -E "✅.*Production.*https://" | grep -oE "https://[a-zA-Z0-9\-]+\.vercel\.app" | tail -1)
+        print_debug "Pattern 1 result: $DEPLOYMENT_URL"
+        
+        # If that doesn't work, try alternative patterns
+        if [[ -z "$DEPLOYMENT_URL" ]]; then
+            DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE "https://house-finance-tracker-[a-zA-Z0-9\-]+\.vercel\.app" | tail -1)
+            print_debug "Pattern 2 result: $DEPLOYMENT_URL"
+        fi
+        
+        # Last resort: look for any vercel.app URL
+        if [[ -z "$DEPLOYMENT_URL" ]]; then
+            DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE "https://[a-zA-Z0-9\-]+\.vercel\.app" | tail -1)
+            print_debug "Pattern 3 result: $DEPLOYMENT_URL"
+        fi
         
         if [[ -n "$DEPLOYMENT_URL" ]]; then
             print_status "Deployment URL: $DEPLOYMENT_URL"
             return 0
         else
             print_warning "Could not extract deployment URL from Vercel output"
-            print_status "Vercel output:"
-            echo "$DEPLOY_OUTPUT"
+            if [[ "$DEBUG_MODE" != "true" ]]; then
+                print_status "Vercel output:"
+                echo "$DEPLOY_OUTPUT"
+            fi
+            
+            # Try to get the latest deployment URL using vercel ls
+            print_status "Attempting to get latest deployment URL..."
+            LATEST_DEPLOYMENT=$(npx vercel ls --limit 1 2>/dev/null | grep -oE "https://[a-zA-Z0-9\-]+\.vercel\.app" | head -1)
+            if [[ -n "$LATEST_DEPLOYMENT" ]]; then
+                DEPLOYMENT_URL="$LATEST_DEPLOYMENT"
+                print_status "Found latest deployment: $DEPLOYMENT_URL"
+                return 0
+            fi
+            
             return 1
         fi
     else
@@ -146,8 +182,10 @@ update_domain() {
     if [[ -n "$DEPLOYMENT_URL" ]]; then
         print_status "Updating domain alias to point to new deployment..."
         
-        # Extract just the hostname from the URL
-        DEPLOYMENT_HOST=$(echo "$DEPLOYMENT_URL" | sed 's|https://||')
+        # Extract just the hostname from the URL (remove https://)
+        DEPLOYMENT_HOST=$(echo "$DEPLOYMENT_URL" | sed 's|https://||' | sed 's|/.*||')
+        
+        print_status "Setting alias: $DOMAIN -> $DEPLOYMENT_HOST"
         
         if npx vercel alias "$DEPLOYMENT_HOST" "$DOMAIN"; then
             print_success "Domain alias updated successfully!"
@@ -156,9 +194,15 @@ update_domain() {
             print_error "Failed to update domain alias!"
             print_warning "You may need to update it manually:"
             print_warning "npx vercel alias $DEPLOYMENT_HOST $DOMAIN"
+            
+            # Show troubleshooting info
+            print_status "Available deployments:"
+            npx vercel ls --limit 5 2>/dev/null || true
         fi
     else
         print_warning "Skipping domain update - no deployment URL available"
+        print_status "You can manually set the alias later with:"
+        print_status "npx vercel alias <deployment-url> $DOMAIN"
     fi
 }
 
@@ -183,15 +227,17 @@ show_help() {
     echo "CabinetApp Deployment Script"
     echo ""
     echo "Usage:"
-    echo "  ./deploy.sh [commit_message]"
+    echo "  ./deploy.sh [commit_message] [options]"
     echo ""
     echo "Examples:"
     echo "  ./deploy.sh                                    # Interactive mode"
     echo "  ./deploy.sh \"Fix payment toggle bug\"           # With commit message"
     echo "  ./deploy.sh \"Add new analytics features\""
+    echo "  ./deploy.sh --debug \"Test deployment\"          # With debug output"
     echo ""
     echo "Options:"
     echo "  -h, --help     Show this help message"
+    echo "  -d, --debug    Enable debug output for troubleshooting"
     echo ""
     echo "What this script does:"
     echo "  1. ✅ Checks for changes in the repository"
@@ -204,11 +250,27 @@ show_help() {
 
 # Main execution
 main() {
-    # Check for help flag
-    if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
-        show_help
-        exit 0
-    fi
+    # Parse arguments
+    COMMIT_MESSAGE_ARG=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -d|--debug)
+                DEBUG_MODE=true
+                print_status "Debug mode enabled"
+                shift
+                ;;
+            *)
+                if [[ -z "$COMMIT_MESSAGE_ARG" ]]; then
+                    COMMIT_MESSAGE_ARG="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
     
     print_header
     
@@ -217,7 +279,7 @@ main() {
     check_changes
     
     # Get commit message
-    get_commit_message "$1"
+    get_commit_message "$COMMIT_MESSAGE_ARG"
     
     # Build project
     build_project
