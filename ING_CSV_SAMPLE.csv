@@ -1,0 +1,12 @@
+Datum,Naam / Omschrijving,Rekening,Tegenrekening,Code,Af Bij,Bedrag,MutatieSoort,Mededelingen
+20231201,Albert Heijn 2567 Leiden,NL91INGB0000000123,NL91RABO0123456789,BA,Af,-45.67,Betaalautomaat,Contactloos betalen
+20231201,Monthly House Contribution,NL91INGB0000000123,NL91ABNA0123456789,OV,Bij,10.00,Overschrijving,Huishoudpot december
+20231202,Action Leiden,NL91INGB0000000123,NL91RABO0987654321,BA,Af,-12.50,Betaalautomaat,PIN
+20231203,Kruidvat 1234,NL91INGB0000000123,NL91INGB0987654321,BA,Af,-8.99,Betaalautomaat,Contactloos betalen
+20231204,Sligro Food Group,NL91INGB0000000123,NL91RABO0111222333,BA,Af,-25.00,Betaalautomaat,PIN
+20231205,Monthly House Contribution,NL91INGB0000000123,NL91KNAB0123456789,OV,Bij,10.00,Overschrijving,Shared expenses
+20231206,Jumbo Leiden Centrum,NL91INGB0000000123,NL91RABO0444555666,BA,Af,-38.45,Betaalautomaat,Contactloos betalen
+20231207,Vattenfall,NL91INGB0000000123,NL91INGB0999888777,IC,Af,-85.50,Incasso,Gas en elektra december
+20231208,Etos 5678,NL91INGB0000000123,NL91RABO0777666555,BA,Af,-15.75,Betaalautomaat,PIN
+20231209,Monthly House Contribution,NL91INGB0000000123,NL91RABO0123987456,OV,Bij,10.00,Overschrijving,House expenses Dec
+20231210,HEMA Leiden,NL91INGB0000000123,NL91ABNA0987654321,BA,Af,-22.95,Betaalautomaat,Contactloos betalen
