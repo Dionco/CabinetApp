@@ -48,6 +48,20 @@ const ConsumptionTracker = ({
   const [consumptionData, setConsumptionData] = useState({});
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
+  
+  // State for collapsible settlements
+  const [expandedSettlements, setExpandedSettlements] = useState(new Set());
+
+  // Toggle settlement expansion
+  const toggleSettlementExpansion = (settlementId) => {
+    const newExpanded = new Set(expandedSettlements);
+    if (newExpanded.has(settlementId)) {
+      newExpanded.delete(settlementId);
+    } else {
+      newExpanded.add(settlementId);
+    }
+    setExpandedSettlements(newExpanded);
+  };
 
   // Fetch consumption settlements (only used if not provided via props)
   const fetchConsumptionSettlements = useCallback(async () => {
@@ -451,113 +465,150 @@ const ConsumptionTracker = ({
           <div className="space-y-4">
             {consumptionSettlements.map(settlement => {
               const typeInfo = consumptionTypes[settlement.type];
+              const isExpanded = expandedSettlements.has(settlement.id);
+              
+              // Calculate settlement summary data
+              const totalParticipants = Object.keys(settlement.consumptionData || {}).length;
+              const paidCount = settlementPayments ? Object.entries(settlement.consumptionData || {})
+                .filter(([name, count]) => {
+                  if (count === 0) return true;
+                  const paymentId = `consumption_${settlement.id}_${name}`;
+                  return settlementPayments[paymentId]?.paid;
+                }).length : 0;
+              
               return (
-                <div key={settlement.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center space-x-3">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${typeInfo.color}`}>
-                        {typeInfo.label}
-                      </span>
-                      <span className="text-gray-600">
-                        {settlement.date.toLocaleDateString()}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => deleteSettlement(settlement.id)}
-                      className="text-red-500 hover:text-red-700 text-sm font-medium"
-                    >
-                      Delete
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Settlement Summary */}
-                    <div>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <p><strong>Total Cost:</strong> €{settlement.totalCost.toFixed(2)}</p>
-                        <p><strong>Cost per {typeInfo.unit}:</strong> €{settlement.costPerUnit.toFixed(2)}</p>
-                        <p><strong>Total {typeInfo.unit}s:</strong> {settlement.totalConsumptions}</p>
-                        {settlement.notes && (
-                          <p><strong>Notes:</strong> {settlement.notes}</p>
+                <div key={settlement.id} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                  {/* Compact Header - Always Visible */}
+                  <div 
+                    className="p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => toggleSettlementExpansion(settlement.id)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-3">
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${typeInfo.color}`}>
+                          {typeInfo.label}
+                        </span>
+                        <span className="text-gray-600 font-medium">
+                          {settlement.date.toLocaleDateString()}
+                        </span>
+                        <span className="text-gray-800 font-semibold">
+                          €{settlement.totalCost.toFixed(2)}
+                        </span>
+                        {settlementPayments && (
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            paidCount === totalParticipants 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {paidCount}/{totalParticipants} Paid
+                          </span>
                         )}
                       </div>
-                    </div>
-
-                    {/* Individual Breakdown with Payment Tracking */}
-                    <div>
-                      <h5 className="font-medium text-gray-700 mb-2">Individual Costs & Payment Status:</h5>
                       
-                      {/* Settlement Payment Summary */}
-                      {settlementPayments && (
-                        <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Payment Status:</span>
-                            <span className="font-medium">
-                              {(() => {
-                                const paidCount = Object.entries(settlement.consumptionData || {})
-                                  .filter(([name, count]) => {
-                                    if (count === 0) return true; // Consider zero consumption as "paid" (no debt)
-                                    const paymentId = `consumption_${settlement.id}_${name}`;
-                                    return settlementPayments[paymentId]?.paid;
-                                  }).length;
-                                const totalCount = Object.keys(settlement.consumptionData || {}).length;
-                                return `${paidCount}/${totalCount} Paid`;
-                              })()}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div className="space-y-2">
-                        {Object.entries(settlement.consumptionData).map(([name, count]) => {
-                          const individualCost = count * settlement.costPerUnit;
-                          const paymentId = `consumption_${settlement.id}_${name}`;
-                          const isPaid = settlementPayments?.[paymentId]?.paid || count === 0;
-                          
-                          return (
-                            <div key={name} className={`flex items-center justify-between p-2 rounded ${count > 0 ? 'bg-white border' : 'bg-gray-50'}`}>
-                              <div className="flex items-center space-x-2">
-                                <span className={count > 0 ? '' : 'text-gray-400'}>{name}:</span>
-                                <span className={`text-sm ${count > 0 ? '' : 'text-gray-400'}`}>
-                                  €{individualCost.toFixed(2)} ({count})
-                                </span>
-                              </div>
-                              
-                              {/* Payment Status & Toggle */}
-                              {count > 0 && settlementPayments && (
-                                <div className="flex items-center space-x-2">
-                                  <span className={`text-xs px-2 py-1 rounded ${isPaid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                    {isPaid ? '✅ Paid' : '❌ Unpaid'}
-                                  </span>
-                                  
-                                  {/* Payment Toggle Button */}
-                                  <PermissionWrapper permission={PERMISSIONS?.MARK_PAYMENTS_PAID}>
-                                    <button
-                                      onClick={() => toggleConsumptionPayment?.(paymentId, name, settlement.id, individualCost)}
-                                      className={`text-xs px-2 py-1 rounded transition-colors ${
-                                        isPaid 
-                                          ? 'bg-red-500 text-white hover:bg-red-600' 
-                                          : 'bg-green-500 text-white hover:bg-green-600'
-                                      }`}
-                                    >
-                                      {isPaid ? 'Mark Unpaid' : 'Mark Paid'}
-                                    </button>
-                                  </PermissionWrapper>
-                                </div>
-                              )}
-                              
-                              {/* Show "No debt" for zero consumption */}
-                              {count === 0 && (
-                                <span className="text-xs text-gray-500 px-2 py-1 rounded bg-gray-100">
-                                  No debt
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                      <div className="flex items-center space-x-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSettlement(settlement.id);
+                          }}
+                          className="text-red-500 hover:text-red-700 text-sm font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                        >
+                          Delete
+                        </button>
+                        <span className={`transform transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}>
+                          ▼
+                        </span>
                       </div>
                     </div>
                   </div>
+
+                  {/* Expandable Content */}
+                  {isExpanded && (
+                    <div className="p-4 border-t border-gray-200 bg-white">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Settlement Summary */}
+                        <div>
+                          <h5 className="font-medium text-gray-700 mb-2">Settlement Details:</h5>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p><strong>Total Cost:</strong> €{settlement.totalCost.toFixed(2)}</p>
+                            <p><strong>Cost per {typeInfo.unit}:</strong> €{settlement.costPerUnit.toFixed(2)}</p>
+                            <p><strong>Total {typeInfo.unit}s:</strong> {settlement.totalConsumptions}</p>
+                            {settlement.notes && (
+                              <p><strong>Notes:</strong> {settlement.notes}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Individual Breakdown with Payment Tracking */}
+                        <div>
+                          <h5 className="font-medium text-gray-700 mb-2">Individual Costs & Payment Status:</h5>
+                          
+                          {/* Settlement Payment Summary */}
+                          {settlementPayments && (
+                            <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
+                              <div className="flex justify-between items-center">
+                                <span className="text-gray-600">Payment Status:</span>
+                                <span className="font-medium">
+                                  {paidCount}/{totalParticipants} Paid
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="space-y-2">
+                            {Object.entries(settlement.consumptionData).map(([name, count]) => {
+                              const individualCost = count * settlement.costPerUnit;
+                              const paymentId = `consumption_${settlement.id}_${name}`;
+                              const isPaid = settlementPayments?.[paymentId]?.paid || count === 0;
+                              
+                              return (
+                                <div key={name} className={`flex items-center justify-between p-2 rounded ${count > 0 ? 'bg-white border' : 'bg-gray-50'}`}>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={count > 0 ? '' : 'text-gray-400'}>{name}:</span>
+                                    <span className={`text-sm ${count > 0 ? '' : 'text-gray-400'}`}>
+                                      €{individualCost.toFixed(2)} ({count})
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Payment Status & Toggle */}
+                                  {count > 0 && settlementPayments && (
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`text-xs px-2 py-1 rounded ${isPaid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        {isPaid ? '✅ Paid' : '❌ Unpaid'}
+                                      </span>
+                                      
+                                      {/* Payment Toggle Button */}
+                                      <PermissionWrapper permission={PERMISSIONS?.MARK_PAYMENTS_PAID}>
+                                        <button
+                                          onClick={() => toggleConsumptionPayment?.(paymentId, name, settlement.id, individualCost)}
+                                          className={`text-xs px-2 py-1 rounded transition-colors ${
+                                            isPaid 
+                                              ? 'bg-red-500 text-white hover:bg-red-600' 
+                                              : 'bg-green-500 text-white hover:bg-green-600'
+                                          }`}
+                                        >
+                                          {isPaid ? 'Mark Unpaid' : 'Mark Paid'}
+                                        </button>
+                                      </PermissionWrapper>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Show "No debt" for zero consumption */}
+                                  {count === 0 && (
+                                    <span className="text-xs text-gray-500 px-2 py-1 rounded bg-gray-100">
+                                      No debt
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
