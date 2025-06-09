@@ -227,6 +227,151 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
     });
   };
 
+  // Calculate profit analysis for consumptions
+  const getProfitAnalysis = () => {
+    let totalRevenue = 0;
+    const profitByType = {
+      coffee: { actualCost: 0, revenue: 0, profit: 0, margin: 0 },
+      beer: { actualCost: 0, revenue: 0, profit: 0, margin: 0 },
+      seltzer: { actualCost: 0, revenue: 0, profit: 0, margin: 0 }
+    };
+
+    // Calculate actual costs from expenses in consumption categories
+    expenses.forEach(expense => {
+      if (expense.category === 'coffee' && profitByType.coffee) {
+        profitByType.coffee.actualCost += expense.amount;
+      } else if (expense.category === 'beer' && profitByType.beer) {
+        profitByType.beer.actualCost += expense.amount;
+      } else if (expense.category === 'seltzer' && profitByType.seltzer) {
+        profitByType.seltzer.actualCost += expense.amount;
+      }
+    });
+
+    // Calculate revenue from consumption settlements
+    consumptionSettlements.forEach(settlement => {
+      const totalUnits = Object.values(settlement.consumptionData || {}).reduce((sum, count) => sum + count, 0);
+      const revenue = totalUnits * settlement.costPerUnit;
+
+      totalRevenue += revenue;
+
+      if (profitByType[settlement.type]) {
+        profitByType[settlement.type].revenue += revenue;
+      }
+    });
+
+    // Calculate total actual costs
+    const totalActualCost = Object.values(profitByType).reduce((sum, data) => sum + data.actualCost, 0);
+
+    // Calculate profit and margins
+    const totalProfit = totalRevenue - totalActualCost;
+    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+    Object.keys(profitByType).forEach(type => {
+      const data = profitByType[type];
+      data.profit = data.revenue - data.actualCost;
+      data.margin = data.revenue > 0 ? (data.profit / data.revenue) * 100 : 0;
+    });
+
+    return {
+      totalActualCost,
+      totalRevenue,
+      totalProfit,
+      totalMargin,
+      profitByType,
+      status: totalProfit > 0 ? 'profit' : totalProfit < 0 ? 'loss' : 'break-even'
+    };
+  };
+
+  // Calculate monthly profit trends
+  const getMonthlyProfitTrends = () => {
+    const monthlyProfit = {};
+    
+    // Initialize months with expense data
+    expenses.forEach(expense => {
+      if (['coffee', 'beer', 'seltzer'].includes(expense.category)) {
+        const expenseDate = new Date(expense.timestamp?.seconds * 1000);
+        const monthKey = format(expenseDate, 'yyyy-MM');
+        
+        if (!monthlyProfit[monthKey]) {
+          monthlyProfit[monthKey] = {
+            month: format(expenseDate, 'MMM yyyy'),
+            actualCost: 0,
+            revenue: 0,
+            profit: 0,
+            margin: 0
+          };
+        }
+        
+        monthlyProfit[monthKey].actualCost += expense.amount;
+      }
+    });
+    
+    // Add revenue from consumption settlements
+    consumptionSettlements.forEach(settlement => {
+      const monthKey = format(settlement.date, 'yyyy-MM');
+      
+      if (!monthlyProfit[monthKey]) {
+        monthlyProfit[monthKey] = {
+          month: format(settlement.date, 'MMM yyyy'),
+          actualCost: 0,
+          revenue: 0,
+          profit: 0,
+          margin: 0
+        };
+      }
+      
+      const totalUnits = Object.values(settlement.consumptionData || {}).reduce((sum, count) => sum + count, 0);
+      const revenue = totalUnits * settlement.costPerUnit;
+      
+      monthlyProfit[monthKey].revenue += revenue;
+    });
+
+    // Calculate profit and margin for each month
+    Object.values(monthlyProfit).forEach(monthData => {
+      monthData.profit = monthData.revenue - monthData.actualCost;
+      monthData.margin = monthData.revenue > 0 ? (monthData.profit / monthData.revenue) * 100 : 0;
+    });
+
+    // Get last 6 months
+    const now = new Date();
+    const sixMonthsAgo = subMonths(now, 5);
+    const months = eachMonthOfInterval({
+      start: sixMonthsAgo,
+      end: now
+    });
+
+    return months.map(month => {
+      const monthKey = format(month, 'yyyy-MM');
+      return monthlyProfit[monthKey] || {
+        month: format(month, 'MMM yyyy'),
+        actualCost: 0,
+        revenue: 0,
+        profit: 0,
+        margin: 0
+      };
+    });
+  };
+
+  // Calculate profit by consumption type for pie chart
+  const getProfitByType = () => {
+    const profitAnalysis = getProfitAnalysis();
+    const typeLabels = {
+      coffee: '☕ Coffee',
+      beer: '🍺 Beer', 
+      seltzer: '🥤 Seltzer'
+    };
+
+    return Object.entries(profitAnalysis.profitByType)
+      .map(([type, data], index) => ({
+        name: typeLabels[type],
+        value: Math.max(0, data.profit), // Only show positive profits in pie chart
+        profit: data.profit,
+        margin: data.margin,
+        color: COLORS[index % COLORS.length]
+      }))
+      .filter(item => item.value > 0);
+  };
+
   // Calculate consumption by type
   const getConsumptionByType = () => {
     const typeData = {
@@ -298,6 +443,11 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
   const consumptionByType = getConsumptionByType();
   const consumptionSettlementsOverTime = getConsumptionSettlementsOverTime();
   const individualConsumptionCosts = getIndividualConsumptionCosts();
+  
+  // Profit analysis data
+  const profitAnalysis = getProfitAnalysis();
+  const monthlyProfitTrends = getMonthlyProfitTrends();
+  const profitByType = getProfitByType();
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -703,6 +853,183 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
         </>
       )}
 
+      {/* Profit Analysis */}
+      {consumptionSettlements.length > 0 && (
+        <>
+          {/* Profit Overview Cards */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h3 className="text-xl font-semibold mb-4 text-gray-700">💰 Smart Profit Analysis</h3>
+            
+            {/* Explanation */}
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start">
+                <span className="text-blue-500 mr-2">ℹ️</span>
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">How Profit is Calculated:</p>
+                  <p><strong>Actual Costs:</strong> Sum of all expenses in Coffee, Beer, and Seltzer categories</p>
+                  <p><strong>Revenue:</strong> What flatmates pay for their consumption (units × price per unit)</p>
+                  <p><strong>Profit:</strong> Revenue - Actual Costs</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className={`text-white p-4 rounded-lg ${
+                profitAnalysis.status === 'profit' ? 'bg-gradient-to-r from-green-500 to-green-600' :
+                profitAnalysis.status === 'loss' ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                'bg-gradient-to-r from-gray-500 to-gray-600'
+              }`}>
+                <h4 className="text-sm font-medium opacity-90">Total Profit</h4>
+                <div className="flex items-center">
+                  <span className="text-xl font-bold">€{profitAnalysis.totalProfit.toFixed(2)}</span>
+                  <span className="ml-2 text-sm opacity-75">
+                    {profitAnalysis.status === 'profit' ? '📈' : 
+                     profitAnalysis.status === 'loss' ? '📉' : '⚖️'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg">
+                <h4 className="text-sm font-medium opacity-90">Profit Margin</h4>
+                <p className="text-xl font-bold">{profitAnalysis.totalMargin.toFixed(1)}%</p>
+              </div>
+
+              <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4 rounded-lg">
+                <h4 className="text-sm font-medium opacity-90">Total Revenue</h4>
+                <p className="text-xl font-bold">€{profitAnalysis.totalRevenue.toFixed(2)}</p>
+              </div>
+
+              <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4 rounded-lg">
+                <h4 className="text-sm font-medium opacity-90">Actual Costs</h4>
+                <p className="text-xl font-bold">€{profitAnalysis.totalActualCost.toFixed(2)}</p>
+              </div>
+            </div>
+
+            {/* Profit Status Message */}
+            <div className={`mt-4 p-4 rounded-lg ${
+              profitAnalysis.status === 'profit' ? 'bg-green-50 border border-green-200' :
+              profitAnalysis.status === 'loss' ? 'bg-red-50 border border-red-200' :
+              'bg-gray-50 border border-gray-200'
+            }`}>
+              <div className="flex items-center">
+                <span className="text-2xl mr-3">
+                  {profitAnalysis.status === 'profit' ? '🎉' : 
+                   profitAnalysis.status === 'loss' ? '⚠️' : 'ℹ️'}
+                </span>
+                <div>
+                  <h4 className={`font-semibold ${
+                    profitAnalysis.status === 'profit' ? 'text-green-800' :
+                    profitAnalysis.status === 'loss' ? 'text-red-800' :
+                    'text-gray-800'
+                  }`}>
+                    {profitAnalysis.status === 'profit' ? 'You\'re Making Money! 💰' :
+                     profitAnalysis.status === 'loss' ? 'You\'re Losing Money 📉' :
+                     'Breaking Even ⚖️'}
+                  </h4>
+                  <p className={`text-sm ${
+                    profitAnalysis.status === 'profit' ? 'text-green-600' :
+                    profitAnalysis.status === 'loss' ? 'text-red-600' :
+                    'text-gray-600'
+                  }`}>
+                    {profitAnalysis.status === 'profit' ? 
+                      `You're earning €${profitAnalysis.totalProfit.toFixed(2)} profit from consumption sales with a ${profitAnalysis.totalMargin.toFixed(1)}% margin.` :
+                     profitAnalysis.status === 'loss' ?
+                      `You're losing €${Math.abs(profitAnalysis.totalProfit).toFixed(2)} on consumption sales. Consider adjusting your prices.` :
+                      'Your consumption sales are breaking even. You\'re covering costs but not making profit.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Monthly Profit Trends */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-semibold mb-4 text-gray-700">Monthly Profit Trends</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyProfitTrends}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip 
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                              <p className="font-medium">{label}</p>
+                              <p className="text-sm text-gray-600">Revenue: €{data.revenue.toFixed(2)}</p>
+                              <p className="text-sm text-gray-600">Costs: €{data.actualCost.toFixed(2)}</p>
+                              <p className={`text-sm font-medium ${data.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Profit: €{data.profit.toFixed(2)} ({data.margin.toFixed(1)}%)
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="profit" 
+                      stroke="#10B981"
+                      strokeWidth={3}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Profit by Type */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-semibold mb-4 text-gray-700">Profit by Consumption Type</h3>
+              <div className="space-y-4">
+                {Object.entries(profitAnalysis.profitByType).map(([type, data]) => {
+                  const typeLabels = {
+                    coffee: { name: '☕ Coffee', color: 'bg-amber-500' },
+                    beer: { name: '🍺 Beer', color: 'bg-yellow-500' },
+                    seltzer: { name: '🥤 Seltzer', color: 'bg-teal-500' }
+                  };
+                  const typeInfo = typeLabels[type];
+                  
+                  return (
+                    <div key={type} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-gray-700">{typeInfo.name}</h4>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          data.profit >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {data.profit >= 0 ? '+' : ''}€{data.profit.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Revenue:</span>
+                          <span>€{data.revenue.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Costs:</span>
+                          <span>€{data.actualCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>Margin:</span>
+                          <span className={data.margin >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {data.margin.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Insights */}
       <div className="bg-white rounded-xl shadow-lg p-6">
         <h3 className="text-xl font-semibold mb-4 text-gray-700">💡 Insights</h3>
@@ -754,6 +1081,43 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                     `${individualConsumptionCosts.sort((a, b) => b.total - a.total)[0]?.name}
                     (€${individualConsumptionCosts.sort((a, b) => b.total - a.total)[0]?.total.toFixed(2)})`
                   }
+                </p>
+              </div>
+
+              {/* Profit Insights */}
+              <div className={`p-4 rounded-lg ${
+                profitAnalysis.status === 'profit' ? 'bg-green-50' :
+                profitAnalysis.status === 'loss' ? 'bg-red-50' : 'bg-gray-50'
+              }`}>
+                <h4 className={`font-medium ${
+                  profitAnalysis.status === 'profit' ? 'text-green-800' :
+                  profitAnalysis.status === 'loss' ? 'text-red-800' : 'text-gray-800'
+                }`}>
+                  Profit Status
+                </h4>
+                <p className={`text-sm ${
+                  profitAnalysis.status === 'profit' ? 'text-green-600' :
+                  profitAnalysis.status === 'loss' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {profitAnalysis.status === 'profit' ? 
+                    `Making €${profitAnalysis.totalProfit.toFixed(2)} profit (${profitAnalysis.totalMargin.toFixed(1)}% margin)` :
+                   profitAnalysis.status === 'loss' ?
+                    `Losing €${Math.abs(profitAnalysis.totalProfit).toFixed(2)} on sales` :
+                    'Breaking even on consumption sales'}
+                </p>
+              </div>
+
+              <div className="p-4 bg-indigo-50 rounded-lg">
+                <h4 className="font-medium text-indigo-800">Best Profit Margin</h4>
+                <p className="text-sm text-indigo-600">
+                  {(() => {
+                    const bestType = Object.entries(profitAnalysis.profitByType)
+                      .sort((a, b) => b[1].margin - a[1].margin)[0];
+                    const typeLabels = { coffee: '☕ Coffee', beer: '🍺 Beer', seltzer: '🥤 Seltzer' };
+                    return bestType ? 
+                      `${typeLabels[bestType[0]]}: ${bestType[1].margin.toFixed(1)}%` : 
+                      'No data yet';
+                  })()}
                 </p>
               </div>
 
