@@ -282,11 +282,11 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
     };
   };
 
-  // Calculate monthly profit trends with cumulative total
+  // Calculate monthly profit trends with cumulative total by type
   const getMonthlyProfitTrends = () => {
     const monthlyProfit = {};
     
-    // Initialize months with expense data
+    // Initialize months with expense data by type
     expenses.forEach(expense => {
       if (['coffee', 'beer', 'seltzer'].includes(expense.category)) {
         const expenseDate = new Date(expense.timestamp?.seconds * 1000);
@@ -295,43 +295,47 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
         if (!monthlyProfit[monthKey]) {
           monthlyProfit[monthKey] = {
             month: format(expenseDate, 'MMM yyyy'),
-            actualCost: 0,
-            revenue: 0,
-            profit: 0,
-            margin: 0,
-            cumulativeProfit: 0
+            coffee: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+            beer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+            seltzer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+            totalProfit: 0,
+            cumulativeTotal: 0
           };
         }
         
-        monthlyProfit[monthKey].actualCost += expense.amount;
+        monthlyProfit[monthKey][expense.category].actualCost += expense.amount;
       }
     });
     
-    // Add revenue from consumption settlements
+    // Add revenue from consumption settlements by type
     consumptionSettlements.forEach(settlement => {
       const monthKey = format(settlement.date, 'yyyy-MM');
       
       if (!monthlyProfit[monthKey]) {
         monthlyProfit[monthKey] = {
           month: format(settlement.date, 'MMM yyyy'),
-          actualCost: 0,
-          revenue: 0,
-          profit: 0,
-          margin: 0,
-          cumulativeProfit: 0
+          coffee: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+          beer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+          seltzer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+          totalProfit: 0,
+          cumulativeTotal: 0
         };
       }
       
       const totalUnits = Object.values(settlement.consumptionData || {}).reduce((sum, count) => sum + count, 0);
       const revenue = totalUnits * settlement.costPerUnit;
       
-      monthlyProfit[monthKey].revenue += revenue;
+      if (monthlyProfit[monthKey][settlement.type]) {
+        monthlyProfit[monthKey][settlement.type].revenue += revenue;
+      }
     });
 
-    // Calculate profit and margin for each month
+    // Calculate profit for each type and month
     Object.values(monthlyProfit).forEach(monthData => {
-      monthData.profit = monthData.revenue - monthData.actualCost;
-      monthData.margin = monthData.revenue > 0 ? (monthData.profit / monthData.revenue) * 100 : 0;
+      ['coffee', 'beer', 'seltzer'].forEach(type => {
+        monthData[type].profit = monthData[type].revenue - monthData[type].actualCost;
+      });
+      monthData.totalProfit = monthData.coffee.profit + monthData.beer.profit + monthData.seltzer.profit;
     });
 
     // Get last 6 months and sort chronologically
@@ -346,19 +350,23 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
       const monthKey = format(month, 'yyyy-MM');
       return monthlyProfit[monthKey] || {
         month: format(month, 'MMM yyyy'),
-        actualCost: 0,
-        revenue: 0,
-        profit: 0,
-        margin: 0,
-        cumulativeProfit: 0
+        coffee: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+        beer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+        seltzer: { actualCost: 0, revenue: 0, profit: 0, cumulativeProfit: 0 },
+        totalProfit: 0,
+        cumulativeTotal: 0
       };
     });
 
-    // Calculate cumulative profit
-    let runningTotal = 0;
+    // Calculate cumulative profit by type
+    const runningTotals = { coffee: 0, beer: 0, seltzer: 0, total: 0 };
     monthlyData.forEach(monthData => {
-      runningTotal += monthData.profit;
-      monthData.cumulativeProfit = runningTotal;
+      ['coffee', 'beer', 'seltzer'].forEach(type => {
+        runningTotals[type] += monthData[type].profit;
+        monthData[type].cumulativeProfit = runningTotals[type];
+      });
+      runningTotals.total += monthData.totalProfit;
+      monthData.cumulativeTotal = runningTotals.total;
     });
 
     return monthlyData;
@@ -979,14 +987,13 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Monthly Profit Trends */}
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-semibold mb-4 text-gray-700">Cumulative Profit Progress</h3>
+              <h3 className="text-xl font-semibold mb-4 text-gray-700">Cumulative Profit by Category</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={monthlyProfitTrends}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
+                    <YAxis />
                     <Tooltip 
                       content={({ active, payload, label }) => {
                         if (active && payload && payload.length) {
@@ -994,14 +1001,22 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                           return (
                             <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
                               <p className="font-medium">{label}</p>
-                              <p className="text-sm text-gray-600">Monthly Revenue: €{data.revenue.toFixed(2)}</p>
-                              <p className="text-sm text-gray-600">Monthly Costs: €{data.actualCost.toFixed(2)}</p>
-                              <p className={`text-sm font-medium ${data.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                Monthly Profit: €{data.profit.toFixed(2)}
-                              </p>
-                              <p className={`text-sm font-bold border-t pt-1 mt-1 ${data.cumulativeProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                Total Profit: €{data.cumulativeProfit.toFixed(2)}
-                              </p>
+                              <div className="space-y-1 mt-2">
+                                <p className="text-sm text-amber-600">
+                                  ☕ Coffee: €{data.coffee.cumulativeProfit.toFixed(2)}
+                                </p>
+                                <p className="text-sm text-blue-600">
+                                  🍺 Beer: €{data.beer.cumulativeProfit.toFixed(2)}
+                                </p>
+                                <p className="text-sm text-green-600">
+                                  🥤 Seltzer: €{data.seltzer.cumulativeProfit.toFixed(2)}
+                                </p>
+                                <div className="border-t pt-1 mt-2">
+                                  <p className={`text-sm font-bold ${data.cumulativeTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    Total: €{data.cumulativeTotal.toFixed(2)}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           );
                         }
@@ -1009,37 +1024,61 @@ const Analytics = ({ expenses, categories, flatmates, monthlyContributions: cont
                       }}
                     />
                     <Line 
-                      yAxisId="left"
                       type="monotone" 
-                      dataKey="profit" 
-                      stroke="#10B981"
-                      strokeWidth={2}
+                      dataKey="coffee.cumulativeProfit" 
+                      stroke="#F59E0B"
+                      strokeWidth={3}
                       dot={{ r: 3 }}
                       activeDot={{ r: 5 }}
-                      name="Monthly Profit"
-                      strokeDasharray="5 5"
+                      name="Coffee Profit"
                     />
                     <Line 
-                      yAxisId="right"
                       type="monotone" 
-                      dataKey="cumulativeProfit" 
+                      dataKey="beer.cumulativeProfit" 
                       stroke="#3B82F6"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Beer Profit"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="seltzer.cumulativeProfit" 
+                      stroke="#10B981"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      name="Seltzer Profit"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="cumulativeTotal" 
+                      stroke="#6366F1"
                       strokeWidth={4}
                       dot={{ r: 4 }}
                       activeDot={{ r: 6 }}
-                      name="Cumulative Profit"
+                      name="Total Cumulative"
+                      strokeDasharray="8 4"
                     />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-4 flex justify-center space-x-6">
+              <div className="mt-4 flex flex-wrap justify-center gap-4 text-xs">
                 <div className="flex items-center">
-                  <div className="w-4 h-0.5 bg-green-500 mr-2" style={{borderStyle: 'dashed', borderWidth: '0 0 2px 0'}}></div>
-                  <span className="text-sm text-gray-600">Monthly Profit</span>
+                  <div className="w-4 h-0.5 bg-amber-500 mr-2"></div>
+                  <span className="text-gray-600">☕ Coffee</span>
                 </div>
                 <div className="flex items-center">
-                  <div className="w-4 h-1 bg-blue-500 mr-2"></div>
-                  <span className="text-sm text-gray-600">Total Cumulative Profit</span>
+                  <div className="w-4 h-0.5 bg-blue-500 mr-2"></div>
+                  <span className="text-gray-600">🍺 Beer</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-0.5 bg-green-500 mr-2"></div>
+                  <span className="text-gray-600">🥤 Seltzer</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-0.5 bg-indigo-500 mr-2" style={{borderStyle: 'dashed', borderWidth: '0 0 2px 0'}}></div>
+                  <span className="text-gray-600">Total</span>
                 </div>
               </div>
             </div>
