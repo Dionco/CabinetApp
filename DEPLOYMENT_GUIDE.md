@@ -13,9 +13,17 @@ I've created a comprehensive deployment script (`deploy.sh`) that automates your
 # With commit message
 ./deploy.sh "Add new feature for consumption tracking"
 
+# With debug output for troubleshooting
+./deploy.sh --debug "Test deployment with verbose output"
+
 # Show help
 ./deploy.sh --help
 ```
+
+### Options
+
+- **`-h, --help`**: Show help message with usage examples
+- **`-d, --debug`**: Enable debug output for troubleshooting deployment issues
 
 ### What the Script Does
 
@@ -39,6 +47,16 @@ I've created a comprehensive deployment script (`deploy.sh`) that automates your
 
 5. **🌐 Domain Management**
    - Updates `cabinetapp.vercel.app` to point to new deployment
+   - Improved URL parsing with multiple fallback patterns
+   - Better error handling with troubleshooting information
+
+### Recent Improvements (June 2025)
+
+- **Enhanced URL Parsing**: Fixed deployment URL extraction with multiple regex patterns
+- **Debug Mode**: Added `--debug` flag for verbose output during troubleshooting
+- **Better Error Handling**: Fallback to `vercel ls` if URL extraction fails
+- **Improved Alias Management**: More robust domain alias updates
+- **Detailed Help**: Comprehensive usage examples and options documentation
    - Ensures your custom domain always works
 
 6. **📊 Summary Report**
@@ -83,6 +101,50 @@ The script will stop and show errors if:
 - Confirms before proceeding if no changes detected
 - Provides fallback commit messages
 - Shows comprehensive deployment summary
+
+## Troubleshooting
+
+### Domain Alias Issues
+
+If the domain alias fails to update automatically:
+
+```bash
+# Check available deployments
+npx vercel ls --limit 5
+
+# Manually set the alias
+npx vercel alias <deployment-url> cabinetapp.vercel.app
+```
+
+### Debug Mode
+
+Use debug mode to see detailed output:
+
+```bash
+./deploy.sh --debug "Test deployment"
+```
+
+This will show:
+- Full Vercel output
+- URL parsing attempts
+- Debug information for troubleshooting
+
+### Common Issues
+
+1. **"Could not extract deployment URL"**
+   - Enable debug mode to see Vercel output
+   - Script will attempt to use `vercel ls` as fallback
+   - Manually set alias if needed
+
+2. **Build failures**
+   - Check for syntax errors in code
+   - Ensure all dependencies are installed
+   - Review build output for specific errors
+
+3. **Git push failures**
+   - Check if you have push permissions
+   - Ensure you're on the correct branch
+   - Verify remote repository is accessible
 
 ## Manual Commands (if needed)
 
