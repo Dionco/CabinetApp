@@ -31,6 +31,7 @@ function MainApp() {
   const [paidBy, setPaidBy] = useState("");
   const [showAddFlatmate, setShowAddFlatmate] = useState(false);
   const [newFlatmateName, setNewFlatmateName] = useState("");
+  const [newFlatmateLastname, setNewFlatmateLastname] = useState("");
   const [showContributionForm, setShowContributionForm] = useState(false);
   const [showBankImport, setShowBankImport] = useState(false);
 
@@ -75,6 +76,23 @@ function MainApp() {
       setExpenses(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
   }
+
+  // Helper function to get flatmate display name
+  const getFlatmateDisplayName = (flatmate) => {
+    if (typeof flatmate === 'string') {
+      // For backward compatibility with old data
+      return flatmate;
+    }
+    return flatmate.fullName || flatmate.name || 'Unknown';
+  };
+
+  // Helper function to get flatmate search key (for balance lookups)
+  const getFlatmateKey = (flatmate) => {
+    if (typeof flatmate === 'string') {
+      return flatmate;
+    }
+    return flatmate.fullName || flatmate.name;
+  };
 
   // Fetch flatmates
   async function fetchFlatmates() {
@@ -340,17 +358,23 @@ function MainApp() {
     if (!newFlatmateName.trim()) return;
     
     return handleAsync(async () => {
-      await addDoc(collection(db, "flatmates"), {
+      const flatmateData = {
         name: newFlatmateName.trim(),
+        lastname: newFlatmateLastname.trim() || "",
+        fullName: `${newFlatmateName.trim()} ${newFlatmateLastname.trim()}`.trim(),
         joinedAt: new Date()
-      });
+      };
       
-      // Initialize balance for new flatmate
-      await setDoc(doc(db, "balances", newFlatmateName.trim()), {
+      await addDoc(collection(db, "flatmates"), flatmateData);
+      
+      // Initialize balance for new flatmate (using full name for backward compatibility)
+      const balanceKey = flatmateData.fullName || flatmateData.name;
+      await setDoc(doc(db, "balances", balanceKey), {
         balance: 0
       });
       
       setNewFlatmateName("");
+      setNewFlatmateLastname("");
       setShowAddFlatmate(false);
       await Promise.all([fetchFlatmates(), fetchBalances()]);
     });
@@ -500,9 +524,10 @@ function MainApp() {
   function calculateComprehensiveBalances() {
     const comprehensiveBalances = {};
     
-    // Initialize balances for all flatmates
+    // Initialize balances for all flatmates (using the correct key)
     flatmates.forEach(flatmate => {
-      comprehensiveBalances[flatmate.name] = 0;
+      const flatmateKey = getFlatmateKey(flatmate);
+      comprehensiveBalances[flatmateKey] = 0;
     });
     
     // 1. Calculate and subtract monthly payment debts directly
@@ -558,7 +583,8 @@ function MainApp() {
     }
 
     flatmates.forEach(flatmate => {
-      debts[flatmate.name] = 0;
+      const flatmateKey = getFlatmateKey(flatmate);
+      debts[flatmateKey] = 0;
 
       months.forEach(month => {
         const monthStart = new Date(month.date.getFullYear(), month.date.getMonth(), 1);
@@ -570,8 +596,11 @@ function MainApp() {
             ? new Date(contribution.timestamp.seconds * 1000)
             : new Date(contribution.timestamp);
           
-          const nameMatch = contribution.flatmate === flatmate.name || 
-                           contribution.description?.toLowerCase().includes(flatmate.name.toLowerCase());
+          // Enhanced name matching for new flatmate structure
+          const nameMatch = contribution.flatmate === flatmateKey || 
+                           contribution.flatmate === flatmate.name ||
+                           contribution.description?.toLowerCase().includes(flatmate.name.toLowerCase()) ||
+                           (flatmate.lastname && contribution.description?.toLowerCase().includes(flatmate.lastname.toLowerCase()));
           
           const dateMatch = (contributionDate >= monthStart && contributionDate <= monthEnd) ||
                            contribution.month === month.key;
@@ -581,7 +610,7 @@ function MainApp() {
 
         const totalPaid = monthlyPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
         const amountOwed = Math.max(0, requiredAmount - totalPaid);
-        debts[flatmate.name] += amountOwed;
+        debts[flatmateKey] += amountOwed;
       });
     });
 
@@ -747,28 +776,47 @@ function MainApp() {
               
               {showAddFlatmate && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Flatmate name"
-                      value={newFlatmateName}
-                      onChange={(e) => setNewFlatmateName(e.target.value)}
-                      className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      onKeyPress={(e) => e.key === 'Enter' && addFlatmate()}
-                    />
-                    <button
-                      onClick={addFlatmate}
-                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => setShowAddFlatmate(false)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
-                    >
-                      Cancel
-                    </button>
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="First name (e.g., Nathalie)"
+                        value={newFlatmateName}
+                        onChange={(e) => setNewFlatmateName(e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        onKeyPress={(e) => e.key === 'Enter' && addFlatmate()}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Last name (e.g., van Wijk)"
+                        value={newFlatmateLastname}
+                        onChange={(e) => setNewFlatmateLastname(e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        onKeyPress={(e) => e.key === 'Enter' && addFlatmate()}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={addFlatmate}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex-1"
+                      >
+                        Add Flatmate
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowAddFlatmate(false);
+                          setNewFlatmateName("");
+                          setNewFlatmateLastname("");
+                        }}
+                        className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 flex-1"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
+                  <p className="text-xs text-blue-600 mt-2">
+                    💡 Adding last names helps auto-detect contributions from bank imports
+                  </p>
                 </div>
               )}
 
@@ -779,10 +827,17 @@ function MainApp() {
                   {flatmates.map((flatmate) => (
                     <div key={flatmate.id} className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 relative">
                       <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-semibold text-lg text-gray-800">{flatmate.name}</h3>
+                        <div>
+                          <h3 className="font-semibold text-lg text-gray-800">{getFlatmateDisplayName(flatmate)}</h3>
+                          {flatmate.lastname && (
+                            <p className="text-xs text-gray-500">
+                              First: {flatmate.name} | Last: {flatmate.lastname}
+                            </p>
+                          )}
+                        </div>
                         <PermissionWrapper permission={PERMISSIONS.REMOVE_FLATMATE}>
                           <button
-                            onClick={() => removeFlatmate(flatmate.id, flatmate.name)}
+                            onClick={() => removeFlatmate(flatmate.id, getFlatmateKey(flatmate))}
                             className="text-red-500 hover:text-red-700 text-sm p-1 rounded hover:bg-red-50 transition-colors"
                             title="Remove flatmate"
                           >
@@ -793,18 +848,21 @@ function MainApp() {
                       <p className={`text-xl font-bold ${
                         (() => {
                           const comprehensiveBalances = calculateComprehensiveBalances();
-                          return (comprehensiveBalances[flatmate.name] || 0) >= 0 ? 'text-green-600' : 'text-red-600';
+                          const flatmateKey = getFlatmateKey(flatmate);
+                          return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'text-green-600' : 'text-red-600';
                         })()
                       }`}>
                         €{(() => {
                           const comprehensiveBalances = calculateComprehensiveBalances();
-                          return (comprehensiveBalances[flatmate.name] || 0).toFixed(2);
+                          const flatmateKey = getFlatmateKey(flatmate);
+                          return (comprehensiveBalances[flatmateKey] || 0).toFixed(2);
                         })()}
                       </p>
                       <p className="text-sm text-gray-600">
                         {(() => {
                           const comprehensiveBalances = calculateComprehensiveBalances();
-                          return (comprehensiveBalances[flatmate.name] || 0) >= 0 ? 'Is owed' : 'Owes';
+                          const flatmateKey = getFlatmateKey(flatmate);
+                          return (comprehensiveBalances[flatmateKey] || 0) >= 0 ? 'Is owed' : 'Owes';
                         })()}
                       </p>
                       
@@ -812,18 +870,20 @@ function MainApp() {
                       <div className="text-xs text-gray-500 mt-1 space-y-1">
                         {(() => {
                           const currentMonthlyDebts = calculateMonthlyPaymentDebts();
-                          return currentMonthlyDebts[flatmate.name] > 0 && (
-                            <div>Monthly debts: -€{(currentMonthlyDebts[flatmate.name] || 0).toFixed(2)}</div>
+                          const flatmateKey = getFlatmateKey(flatmate);
+                          return currentMonthlyDebts[flatmateKey] > 0 && (
+                            <div>Monthly debts: -€{(currentMonthlyDebts[flatmateKey] || 0).toFixed(2)}</div>
                           );
                         })()}
                         {(() => {
                           let consumptionDebt = 0;
+                          const flatmateKey = getFlatmateKey(flatmate);
                           if (consumptionSettlements) {
                             consumptionSettlements.forEach(settlement => {
-                              if (settlement.consumptionData && settlement.consumptionData[flatmate.name]) {
-                                const count = settlement.consumptionData[flatmate.name];
+                              if (settlement.consumptionData && settlement.consumptionData[flatmateKey]) {
+                                const count = settlement.consumptionData[flatmateKey];
                                 if (count > 0) {
-                                  const paymentId = `consumption_${settlement.id}_${flatmate.name}`;
+                                  const paymentId = `consumption_${settlement.id}_${flatmateKey}`;
                                   const isPaid = settlementPayments?.[paymentId]?.paid || false;
                                   if (!isPaid) {
                                     consumptionDebt += count * settlement.costPerUnit;

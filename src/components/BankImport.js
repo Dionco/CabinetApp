@@ -178,15 +178,36 @@ const BankImport = ({ flatmates, onImportComplete }) => {
       }
       
       if (categorization.type === 'contribution') {
+        // Try to automatically match flatmate by name
+        let assignedFlatmate = 'Unassigned';
+        
+        // Check counterparty name and description for flatmate names
+        const textToCheck = `${transaction.counterparty} ${transaction.description}`.toLowerCase();
+        
+        for (const flatmate of flatmates) {
+          const firstName = flatmate.name.toLowerCase();
+          const lastName = (flatmate.lastname || '').toLowerCase();
+          const fullName = (flatmate.fullName || flatmate.name).toLowerCase();
+          
+          // Check if any part of the flatmate's name appears in the transaction
+          if (textToCheck.includes(firstName) || 
+              (lastName && textToCheck.includes(lastName)) ||
+              textToCheck.includes(fullName)) {
+            assignedFlatmate = flatmate.fullName || flatmate.name;
+            break;
+          }
+        }
+        
         // Add as monthly contribution
         const contribution = {
-          flatmate: 'Unassigned', // User will need to assign
+          flatmate: assignedFlatmate,
           amount: transaction.amount,
           timestamp: transactionDate,
           month: transactionDate.toISOString().slice(0, 7),
           source: 'bank_import',
           description: transaction.description,
-          rawTransaction: transaction
+          rawTransaction: transaction,
+          autoAssigned: assignedFlatmate !== 'Unassigned'
         };
         
         try {
@@ -204,7 +225,7 @@ const BankImport = ({ flatmates, onImportComplete }) => {
           amount: transaction.amount,
           category: categorization.category,
           paidBy: 'Bank Account', // Can be updated later
-          participants: flatmates.map(f => f.name), // Split among all by default
+          participants: flatmates.map(f => f.fullName || f.name), // Split among all by default
           splitAmount: transaction.amount / Math.max(flatmates.length, 1),
           timestamp: transactionDate,
           source: 'bank_import',
@@ -324,16 +345,30 @@ const BankImport = ({ flatmates, onImportComplete }) => {
               {importResults.duplicates && importResults.duplicates.length > 0 && (
                 <p>⚠ {importResults.duplicates.length} duplicate transactions skipped</p>
               )}
+              {(() => {
+                const autoAssigned = importResults.contributions.filter(c => c.autoAssigned).length;
+                return autoAssigned > 0 && (
+                  <p>🎯 {autoAssigned} contributions auto-assigned by name matching</p>
+                );
+              })()}
             </div>
             
             {importResults.contributions.length > 0 && (
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                <p className="text-sm text-yellow-800 font-medium">
-                  ⚠ Action Required: Please assign imported contributions to specific flatmates
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                <p className="text-sm text-blue-800 font-medium">
+                  🎯 Smart Name Matching Results:
                 </p>
-                <p className="text-xs text-yellow-700 mt-1">
-                  Contributions were imported as "Unassigned" - you can edit them in the Analytics tab
-                </p>
+                <div className="text-xs text-blue-700 mt-1 space-y-1">
+                  {importResults.contributions.map((contrib, index) => (
+                    <div key={index}>
+                      {contrib.autoAssigned ? (
+                        <span>✅ Auto-assigned to {contrib.flatmate}</span>
+                      ) : (
+                        <span>❌ Needs manual assignment: {contrib.description}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             
